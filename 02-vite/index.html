@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>02 Vite</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <!--
+      Vite ではこの index.html が「エントリポイント」そのもの。
+      dev では src/main.js がそのまま配信され、build では
+      バンドラ（Vite 8 では Rolldown）がここを解析して
+      <script>/<link> をハッシュ付きファイル名に書き換える。
+      CSS は main.js の import './style.css' 経由で入るので <link> は書かない。
+    -->
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>01 esbuild</title>
+    <!--
+      esbuild は HTML を触らない。出力ファイル名を自分で書く必要がある。
+      (Vite / webpack が HTML への <script> 差し込みを自動でやってくれるのは
+       それぞれ index.html 起点 / html-webpack-plugin のおかげ)
+    -->
+    <link rel="stylesheet" href="./dist/main.css" />
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="./dist/main.js"></script>
+  </body>
+</html>
