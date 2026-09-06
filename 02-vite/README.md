@@ -40,7 +40,7 @@ import { nanoid } from '/node_modules/.vite/deps/nanoid.js?v=xxxxxxxx';
 ```
 
 **bare specifier が実パスに書き換わっている。** これが Vite dev の中核の仕事です。
-ブラウザは `'nanoid'` を解決できないので、誰かがやらないといけない（root README 1章③）。
+ブラウザは `'nanoid'` を解決できないので、誰かがやらないといけない（[docs/README.md](../docs/README.md) 1章③）。
 
 ### 見てほしいこと③ 事前バンドルの実物
 

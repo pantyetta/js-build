@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<title>JS のビルドツールを、改めて学ぶ — 60分</title>
+<title>JS のビルドツールを、改めて学ぶ — 70分</title>
 <style>
   /* 最小リセット（Artifact 側が入れてくれていた分をローカル用に自前で持つ） */
   html { -webkit-text-size-adjust: 100%; }
@@ -455,7 +455,7 @@
 
     <!-- 01 ─────────────────────────────────────────────── -->
     <section class="slide" data-sec="はじめに" data-time="00–05分">
-      <span class="eyebrow">60分の勉強会</span>
+      <span class="eyebrow">70分の勉強会</span>
       <h1>JS のビルドツールを、<br>改めて学ぶ</h1>
       <p class="lead">「なんとなく使っている」を「仕組みが分かっている」に変える。<br>
         webpack と Vite が実際に何をしているのかを、動くコードで確かめます。</p>
@@ -507,8 +507,33 @@ Relative references must start with either "/", "./", or "../".</pre>
       <aside class="notes">4つのうち<b>①だけが「バンドラが生まれた本当の理由」</b>。②③④は後から乗ってきた仕事。次のパートでその歴史をやる、と繋ぐ。</aside>
     </section>
 
-    <!-- 05 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート1 · 歴史" data-time="05–15分">
+    <!-- P1.1 ── 前提：ECMAScript と JavaScript ───────────── -->
+    <section class="slide" data-sec="パート1 · 前提と歴史" data-time="05–23分">
+      <span class="eyebrow">前提 · 言葉の整理</span>
+      <h2><span class="q">ECMAScript</span> は仕様、<span class="q">JavaScript</span> は実装</h2>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>用語</th><th>指すもの</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">ECMAScript (ES)</td><td>言語仕様そのもの。TC39 という委員会が策定する</td></tr>
+            <tr><td class="mono">JavaScript</td><td>その仕様を実装したもの（V8 など）の通称。実務ではほぼ同義に使う</td></tr>
+            <tr><td class="mono">ES6 = ES2015</td><td>2015年から<b>毎年</b>リリースに。ES6 が2015年版、以降 ES2016・ES2017…</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="eyebrow">「ES2015 の構文」がだいたい指すもの</p>
+      <pre class="code"><span class="k">let</span> / <span class="k">const</span>            <span class="c">// var の置き換え</span>
+() =&gt; {}                <span class="c">// アロー関数</span>
+<span class="k">class</span> X {}             <span class="c">// クラス構文</span>
+<span class="k">const</span> { a, b } = obj   <span class="c">// 分割代入</span>
+<span class="k">import</span> / <span class="k">export</span>       <span class="a">// ← 今日の主役。モジュール</span></pre>
+      <p class="lead">古いブラウザ（IE11 など）はこれらを<span class="em">構文エラー</span>にした。<br>
+        だから長く「新しい構文で書いて、古い書き方に変換して配る」のが必須でした（→ あとで回収）。</p>
+      <aside class="notes">ここは速く流す。<b>「ES2015 ＝ import が言語に入った年」</b>だけ残ればいい。IE11 の話はこのあと transpile のスライドで回収する。</aside>
+    </section>
+
+    <!-- P1.2 ── ① script タグを並べていた時代 ─────────────── -->
+    <section class="slide" data-sec="パート1 · 前提と歴史" data-time="05–23分">
       <span class="eyebrow">① 2010年ごろまで</span>
       <h2>script タグを、正しい順番に並べていた</h2>
       <pre class="code"><span class="c">&lt;script src="jquery.js"&gt;&lt;/script&gt;</span>
@@ -518,12 +543,35 @@ Relative references must start with either "/", "./", or "../".</pre>
         <div class="card"><span class="tag">問題 1</span><h3>依存の順番を人間が管理する</h3><p>ファイルが増えるほど、正しい並びを知っている人が減っていく。</p></div>
         <div class="card"><span class="tag">問題 2</span><h3>全部がグローバル変数</h3><p>どのファイルの誰が <code class="inline">window.foo</code> を書き換えたか追えない。</p></div>
       </div>
-      <p class="lead">ファイルが10個を超えたあたりから破綻します。</p>
-      <aside class="notes">古株のメンバーがいれば「これで消耗した記憶ありますよね」と振ると場が温まる。若手には「今も jQuery のプラグインとかで見かける形」と補足。</aside>
+      <p class="lead">対策は IIFE（関数で囲う）や <code class="inline">window.MyApp = {}</code> の名前空間パターン。<br>
+        それでもファイルが10個を超えたあたりから破綻します。</p>
+      <aside class="notes">古株のメンバーがいれば「これで消耗した記憶ありますよね」と振ると場が温まる。若手には「今も jQuery のプラグインとかで見かける形」と補足。minify 後の出力に IIFE が残っているのは、この名残。</aside>
     </section>
 
-    <!-- 06 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート1 · 歴史" data-time="05–15分">
+    <!-- P1.3 ── モジュールシステムの系譜 ─────────────────── -->
+    <section class="slide" data-sec="パート1 · 前提と歴史" data-time="05–23分">
+      <span class="eyebrow">なぜ流儀が乱立しているのか</span>
+      <h2>言語にモジュールが無かった。だから<span class="q">各コミュニティが自前で発明した</span></h2>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>方式</th><th>登場</th><th>構文</th><th>どこ用</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">CommonJS</td><td>2009 · Node.js</td><td class="mono">require() / module.exports</td><td>サーバー</td></tr>
+            <tr><td class="mono">AMD</td><td>2011 · RequireJS</td><td class="mono">define([deps], factory)</td><td>ブラウザ（非同期）</td></tr>
+            <tr><td class="mono">UMD</td><td>2011頃</td><td>上2つ＋グローバルを全部書いた定型</td><td>配布ライブラリ</td></tr>
+            <tr><td class="mono">ESM</td><td><b>2015 · 言語仕様</b></td><td class="mono">import / export</td><td>言語標準（今の前提）</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <ul class="points">
+        <li class="key"><b>ESM だけが「静的」</b> — <code class="inline">import</code> は必ずファイル先頭。<code class="inline">if</code> の中には書けない</li>
+        <li>だからバンドラは<span class="em">コードを実行せずに</span>依存グラフを解析できる → tree shaking の前提</li>
+      </ul>
+      <aside class="notes">全部覚える必要はない。<b>「2015年より前は言語にモジュールが無く、みんな自前でやっていた」</b>という空気だけ。UMD の中身をチラ見せすると「うわ」となって伝わる。</aside>
+    </section>
+
+    <!-- P1.4 ── ② CommonJS（橋渡し）────────────────────── -->
+    <section class="slide" data-sec="パート1 · 前提と歴史" data-time="05–23分">
       <span class="eyebrow">② 2009年 · CommonJS</span>
       <h2>Node.js が、順番の問題を解いた</h2>
       <pre class="code"><span class="k">const</span> utils = <span class="a">require</span>(<span class="a">'./utils'</span>);
@@ -537,8 +585,8 @@ module.exports = { foo };</pre>
       <aside class="notes">ここが今日いちばん大事な繋ぎ。<b>次のスライドでバンドラの出自を宣言する。</b>ゆっくり言う。</aside>
     </section>
 
-    <!-- 07 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート1 · 歴史" data-time="05–15分">
+    <!-- P1.5 ── 今日の芯① バンドラの出自 ───────────────── -->
+    <section class="slide" data-sec="パート1 · 前提と歴史" data-time="05–23分">
       <span class="kicker">今日の芯 ①</span>
       <h2>その願いを叶えるために生まれたのが、バンドラ</h2>
       <p class="lead">browserify（2011） → <b>webpack（2012）</b></p>
@@ -550,8 +598,8 @@ module.exports = { foo };</pre>
       <aside class="notes">パート3の <code>__webpack_require__</code> への伏線。「あとで本物を見せます」と予告しておくと、聞き手が待ってくれる。</aside>
     </section>
 
-    <!-- 08 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート1 · 歴史" data-time="05–15分">
+    <!-- P1.6 ── ③ ESM が標準に。ではバンドラ不要？ ──────── -->
+    <section class="slide" data-sec="パート1 · 前提と歴史" data-time="05–23分">
       <span class="eyebrow">③ 2015年仕様 / 2017年ブラウザ実装</span>
       <h2>ESM が標準になった。<span class="q">ではバンドラは不要？</span></h2>
       <pre class="code"><span class="k">import</span> { foo } <span class="k">from</span> <span class="a">'./utils.js'</span>;
@@ -559,18 +607,78 @@ module.exports = { foo };</pre>
       <p class="lead">ようやく言語仕様としてのモジュールが来ました。<br>
         <span class="em">それでも要ります。</span>理由はさっきの4つと同じです。</p>
       <ul class="points">
-        <li class="key">パッケージ名を解決できない（← <b>これは今も誰かがやるしかない</b>）</li>
+        <li class="key">パッケージ名を解決できない（← <b>これは今も誰かがやるしかない</b> → 次のスライド）</li>
         <li>リクエストが爆発する</li>
         <li>JS 以外を import できない</li>
-        <li>最適化されない</li>
+        <li>最適化されない（← <b>この先の transpile のスライド</b>）</li>
       </ul>
       <p class="lead">ただし ESM の登場で、<b>「開発中はバンドルしない」という選択肢が生まれました。</b>
         これがパート4の Vite に繋がります。</p>
       <aside class="notes">ここで2本目の伏線。<b>ESM が来たから Vite が可能になった</b>、という因果を強調しておくと、パート4がすんなり入る。</aside>
     </section>
 
+    <!-- P1.7 ── ④ npm / node_modules → bare specifier ──── -->
+    <section class="slide" data-sec="パート1 · 前提と歴史" data-time="05–23分">
+      <span class="eyebrow">④ 2010年〜 · npm</span>
+      <h2><code class="inline">import 'nanoid'</code> が書けるのは、<span class="q">npm</span> があるから</h2>
+      <pre class="code"><span class="a">npm install</span>
+  ├─ node_modules/       <span class="c">// パッケージの実体</span>
+  ├─ package.json        <span class="c">// 何を使うかの宣言（main / exports / type）</span>
+  └─ package-lock.json   <span class="c">// 固定バージョン</span></pre>
+      <ul class="points">
+        <li>パッケージの入口は <code class="inline">package.json</code> の <code class="inline">main</code> / <code class="inline">exports</code> で決まる</li>
+        <li class="key"><b>ブラウザはこの探索をしない。</b><code class="inline">'nanoid'</code> → 実ファイル、を誰かが解決するしかない</li>
+        <li>その「誰か」＝ バンドラ ／ Vite の事前バンドル。<span class="schema-em">スライド03で落ちたやつ</span></li>
+      </ul>
+      <p class="lead">npm / yarn / pnpm が並立するのも歴史。<b>yarn（2016）</b>は当時の npm の遅さと lockfile 不在への不満、
+        <b>pnpm</b> は <code class="inline">node_modules</code> の重複排除が動機です。</p>
+      <aside class="notes">スライド03（nanoid が落ちる）とスライド後半（Vite が実パスに書き換える）を繋ぐ結び目。<b>「毎日書いてる bare import は、node_modules という仕組みに乗っている」</b>と一言。</aside>
+    </section>
+
+    <!-- P1.8 ── ⑤ transpile の歴史（Babel）─────────────── -->
+    <section class="slide" data-sec="パート1 · 前提と歴史" data-time="05–23分">
+      <span class="eyebrow">⑤ 2015〜2021年ごろ · Babel 全盛</span>
+      <h2>なぜ <span class="q">Babel</span> が要ったのか、そして要らなくなったのか</h2>
+      <pre class="code"><span class="k">const</span> add = (a, b) =&gt; a + b;
+<span class="c">// ↓ Babel が古いブラウザ向けに変換</span>
+<span class="k">var</span> add = <span class="k">function</span> (a, b) { <span class="k">return</span> a + b; };</pre>
+      <ul class="points">
+        <li>新しい構文で書きたい、でも IE11 は構文エラーにする → <b>ES2015→ES5 変換が必須の時代</b></li>
+        <li class="key"><b>IE のサポートが2022年に終了</b> → 「ES5 に落とす」設定は多くの現場で不要に</li>
+        <li>今 transpile が残る主用途は <span class="em">TypeScript → JS</span> と <span class="em">JSX → JS</span></li>
+      </ul>
+      <p class="pull">transpile ＝ <span class="em">構文</span>の変換。<br>
+        polyfill ＝ 存在しない <span class="em">API</span> を実装で埋める。別物です。</p>
+      <aside class="notes">用語としての transpile / bundle / polyfill の整理は<b>次のパート2でやる</b>。ここは「Babel はなぜ生まれ、なぜ影が薄くなったか」という歴史に絞る。Babel 自体も今は SWC / Oxc に置き換わりつつある、と一言。</aside>
+    </section>
+
+    <!-- P1.9 ── パート1まとめ：年表 ──────────────────── -->
+    <section class="slide" data-sec="パート1 · 前提と歴史" data-time="05–23分">
+      <span class="eyebrow">パート1 まとめ · 1枚の年表</span>
+      <h2>ここまでを、時間軸に並べる</h2>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>年</th><th>出来事</th><th>効いたこと</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">2009</td><td>Node.js ＋ CommonJS</td><td><code class="inline">require</code> の書き方が広まる</td></tr>
+            <tr><td class="mono">2010</td><td>npm</td><td>パッケージ配布のインフラ</td></tr>
+            <tr><td class="mono">2011</td><td>browserify / RequireJS</td><td>「require をブラウザで」</td></tr>
+            <tr><td class="mono">2012</td><td><b>webpack</b></td><td>loader で CSS・画像もモジュール化</td></tr>
+            <tr><td class="mono">2015</td><td><b>ES2015</b>：ESM を言語仕様に ／ Babel 全盛</td><td><code class="inline">import</code> 誕生。ただし実装が追いつかず変換必須</td></tr>
+            <tr><td class="mono">2017</td><td>主要ブラウザが ESM を実装</td><td>ネイティブで <code class="inline">import</code> が動く</td></tr>
+            <tr><td class="mono">2020</td><td><b>Vite</b> / esbuild が普及</td><td>「開発中はバンドルしない」</td></tr>
+            <tr><td class="mono">2022</td><td>IE 11 サポート終了</td><td>ES5 へのダウンレベルがほぼ不要に</td></tr>
+            <tr><td class="mono">2023〜</td><td>SWC / Oxc / Rolldown / Rspack</td><td>ツールの中身が JS → Rust / Go へ</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="pull">道具は「壊れていたものを直す」ために積み上がった。<br>
+        だから設定項目には、必ず<span class="em">直したかった何か</span>がある。</p>
+      <aside class="notes">パート1の締め。<b>全部覚えなくていい、この流れの"形"だけ</b>。次のパート2で「では道具は実際に何をやっているのか」に入る、と繋ぐ。詳細版は <code>docs/js-background.md</code> にある、と案内。</aside>
+    </section>
+
     <!-- 09 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート2 · 5工程" data-time="15–25分">
+    <section class="slide" data-sec="パート2 · 5工程" data-time="23–33分">
       <span class="eyebrow">全ツール共通の骨格</span>
       <h2>どのツールも、やっていることは同じ5工程</h2>
       <figure>
@@ -646,7 +754,7 @@ module.exports = { foo };</pre>
     </section>
 
     <!-- 10 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート2 · 用語" data-time="15–25分">
+    <section class="slide" data-sec="パート2 · 用語" data-time="23–33分">
       <span class="eyebrow">いちばん多い混同</span>
       <h2><span class="q">transpile</span> と <span class="q">bundle</span> は、別のものです</h2>
       <div class="cards">
@@ -672,7 +780,7 @@ module.exports = { foo };</pre>
     </section>
 
     <!-- 11 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート3 · webpack" data-time="25–38分">
+    <section class="slide" data-sec="パート3 · webpack" data-time="33–46分">
       <span class="eyebrow">設定ファイルの読み方</span>
       <h2>webpack で覚えるのは、5つのブロックだけ</h2>
       <div class="tablewrap">
@@ -693,7 +801,7 @@ module.exports = { foo };</pre>
     </section>
 
     <!-- 12 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート3 · webpack" data-time="25–38分">
+    <section class="slide" data-sec="パート3 · webpack" data-time="33–46分">
       <span class="kicker">山場 ① · 実物を読む</span>
       <h2>webpack の出力を開くと、こうなっている</h2>
       <pre class="code"><span class="c">// dist/main.js の冒頭（development ビルド＝minify なし）</span>
@@ -712,7 +820,7 @@ module.exports = { foo };</pre>
     </section>
 
     <!-- 13 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート3 · webpack" data-time="25–38分">
+    <section class="slide" data-sec="パート3 · webpack" data-time="33–46分">
       <span class="kicker">山場 ① · 実物を読む</span>
       <h2>そして、これが同じファイルの中にいます</h2>
       <pre class="code"><span class="k">function</span> <span class="a">__webpack_require__</span>(moduleId) {
@@ -732,7 +840,7 @@ module.exports = { foo };</pre>
     </section>
 
     <!-- 14 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート3 · webpack" data-time="25–38分">
+    <section class="slide" data-sec="パート3 · webpack" data-time="33–46分">
       <span class="kicker">今日の芯 ① · 回収</span>
       <h2>これがバンドラの正体です</h2>
       <p class="pull">ブラウザに無いモジュールシステムを、<br>
@@ -747,7 +855,7 @@ module.exports = { foo };</pre>
     </section>
 
     <!-- 15 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート3 · webpack" data-time="25–38分">
+    <section class="slide" data-sec="パート3 · webpack" data-time="33–46分">
       <span class="eyebrow">loader という考え方</span>
       <h2>なぜ CSS を「JS モジュールに変換」するのか</h2>
       <pre class="code">use: [ <span class="a">MiniCssExtractPlugin.loader</span>, <span class="a">'css-loader'</span> ]
@@ -763,7 +871,7 @@ module.exports = { foo };</pre>
     </section>
 
     <!-- 16 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート4 · Vite" data-time="38–50分">
+    <section class="slide" data-sec="パート4 · Vite" data-time="46–58分">
       <span class="eyebrow">前提のズレを直す</span>
       <h2>Vite と webpack は、<span class="q">同じ層にいません</span></h2>
       <figure>
@@ -805,7 +913,7 @@ module.exports = { foo };</pre>
     </section>
 
     <!-- 17 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート4 · Vite" data-time="38–50分">
+    <section class="slide" data-sec="パート4 · Vite" data-time="46–58分">
       <span class="kicker">山場 ② · ここが全部</span>
       <h2>違うのは<span class="q">開発時</span>だけ。本番ビルドはほぼ同じです</h2>
       <figure>
@@ -882,7 +990,7 @@ module.exports = { foo };</pre>
     </section>
 
     <!-- 18 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート4 · Vite" data-time="38–50分">
+    <section class="slide" data-sec="パート4 · Vite" data-time="46–58分">
       <span class="eyebrow">実物を見る</span>
       <h2>Vite の dev サーバーは、import を書き換えている</h2>
       <p class="eyebrow">自分が書いたコード</p>
@@ -898,7 +1006,7 @@ module.exports = { foo };</pre>
     </section>
 
     <!-- 19 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート4 · Vite" data-time="38–50分">
+    <section class="slide" data-sec="パート4 · Vite" data-time="46–58分">
       <span class="eyebrow">2つの素朴な疑問</span>
       <h2>なぜ依存だけ事前バンドル？　なぜ本番はバンドル？</h2>
       <div class="cards">
@@ -916,7 +1024,7 @@ module.exports = { foo };</pre>
     </section>
 
     <!-- 20 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート4 · Vite" data-time="38–50分">
+    <section class="slide" data-sec="パート4 · Vite" data-time="46–58分">
       <span class="kicker">注意 · 記事が古い</span>
       <h2>「Vite は本番で Rollup を使う」は、もう違います</h2>
       <pre class="code">$ npm ls rolldown
@@ -936,7 +1044,7 @@ $ node -e "console.log(require('./node_modules/vite/package.json').dependencies)
     </section>
 
     <!-- 21 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート5 · まとめ" data-time="50–60分">
+    <section class="slide" data-sec="パート5 · まとめ" data-time="58–70分">
       <span class="eyebrow">いま起きている置き換え</span>
       <h2>JS 製 → Go / Rust 製。速度が10〜100倍変わります</h2>
       <div class="tablewrap">
@@ -957,7 +1065,7 @@ $ node -e "console.log(require('./node_modules/vite/package.json').dependencies)
     </section>
 
     <!-- 22 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート5 · まとめ" data-time="50–60分">
+    <section class="slide" data-sec="パート5 · まとめ" data-time="58–70分">
       <span class="eyebrow">実務の判断</span>
       <h2>で、うちは何を使えばいいのか</h2>
       <div class="tablewrap">
@@ -979,7 +1087,7 @@ $ node -e "console.log(require('./node_modules/vite/package.json').dependencies)
     </section>
 
     <!-- 23 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート5 · まとめ" data-time="50–60分">
+    <section class="slide" data-sec="パート5 · まとめ" data-time="58–70分">
       <span class="eyebrow">よく踏む地雷</span>
       <h2>エラーメッセージから原因を引く</h2>
       <div class="tablewrap">
@@ -1001,7 +1109,7 @@ $ node -e "console.log(require('./node_modules/vite/package.json').dependencies)
     </section>
 
     <!-- 24 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="おわりに" data-time="50–60分">
+    <section class="slide" data-sec="おわりに" data-time="58–70分">
       <span class="kicker">まとめ</span>
       <h2>持って帰ってほしかった2つ</h2>
       <ol class="steps">

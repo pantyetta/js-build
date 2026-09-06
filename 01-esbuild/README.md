@@ -78,7 +78,7 @@ cat dist/main.js
 - `bundle: false` = **transpile だけ**（構文変換のみ、依存は辿らない）
 - `bundle: true` = **transpile + 依存解決 + 結合**
 
-root README の用語表にある「transpile と bundle は別物」が、これで体感できます。
+[docs/README.md](../docs/README.md) の用語辞典にある「transpile と bundle は別物」が、これで体感できます。
 確認したら `true` に戻してください。
 
 ### 実験B: tree shaking を消す

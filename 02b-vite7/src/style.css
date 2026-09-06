@@ -1,0 +1,31 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+}
+
+#app {
+  padding: 2rem;
+  max-width: 40rem;
+}
+
+button {
+  font: inherit;
+  padding: 0.5rem 1rem;
+  margin-right: 0.5rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+code,
+pre {
+  background: rgba(127, 127, 127, 0.15);
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+}
