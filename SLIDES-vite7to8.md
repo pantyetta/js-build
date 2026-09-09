@@ -54,13 +54,15 @@ React / Vue / Svelte など、フレームワークに対応しており、フ�
 - **リクエスト数を抑えるため** lodash のようなパッケージは内部が数百モジュール。そのまま配ると数百リクエスト。
 
 
-## 5. ツールの階層：Vite と webpack の位置
+<!-- ## 5. ツールの階層：Vite と webpack の位置
 
-<!-- 📊 図版: ツールの層構造。Vite は開発ツール一式の層、webpack はバンドラの層にあり、比較対象がずれていることを示す図 -->
+📊 図版: ツールの層構造。Vite は開発ツール一式の層、webpack はバンドラの層にあり、比較対象がずれていることを示す図 -->
 
-## パート3 · Vite 7 → 8 の変更点
+## 3. Vite 7 → 8 の変更点
 
-## 9. 結論：内部エンジンの置き換え（JS 製 → Rust 製）
+内部エンジンの置き換え（JS、GO 製 → Rust 製）
+開発ビルドと本番ビルドに使用するツール群が一新された。  
+一方で、開発サーバーの動作モデル（事前バンドル → ネイティブ ESModule → オンデマンド変換 → HMR）と、 設定ファイルの基本構造は変わらない。
 
 | 処理 | Vite 7 | Vite 8 |
 |---|---|---|
@@ -69,36 +71,20 @@ React / Vue / Svelte など、フレームワークに対応しており、フ�
 | 本番のバンドル | Rollup | Rolldown |
 | CSS の変換・minify | esbuild | lightningcss |
 
-パート2で見た **esbuild**（事前バンドル）と **Rollup**（本番バンドル）が、Vite 8 ではどちらも置き換わる。  
-影響範囲は**開発サーバーと本番ビルドの両方**だ。  
-一方で、開発サーバーの動作モデル（事前バンドル → ネイティブ ESModule → オンデマンド変換 → HMR）と、 設定ファイルの基本構造は変わらない。
 
-## 10. 開発時の変換結果：7 と 8 で同一
+## 3. 特に恩恵を受ける本番ビルド
 
-```
-import { nanoid } from 'nanoid';
-```
-
-```
-import { nanoid } from "/node_modules/.vite/deps/nanoid.js?v=xxxxxxxx";
-// ?v= のハッシュだけ違う。書き換えのロジックは同一
-```
-
-- **bare specifier `'nanoid'` → 実パス**の書き換え：7 と 8 で同じ
-- 相対 import（`./counter.js`）は書き換えなし：7 と 8 で同じ
-
-書き換えのロジックは同じだ。実行するエンジン（esbuild → Rolldown / Oxc）が変わっている。
-
-## 11. 本番バンドラの置き換え：Rollup → Rolldown
+本場るビルトではバンドル処理がjs -> rustに変更されたため実行速度の向上が見込まれる。
+esbuild(開発ビルド)の場合は元々goで書かれているため、実行時間に変化はない。
+`vite.config.js` の基本構造は変わらなず、Rolldown が Rollup 互換を目標としている。
 
 | 処理 | Vite 7 | Vite 8 |
 |---|---|---|
-| 本番のバンドル | Rollup（JS 製） | **Rolldown**（Rust・Oxc ベース） |
+| 本番のバンドル | Rollup（JS 製） | **Rolldown**（Rust製 Oxc ベース） |
 | JS の変換・minify | esbuild | Oxc |
 | CSS の変換・minify | esbuild | **lightningcss** |
 | `vite` パッケージの依存 | esbuild, rollup ほか | rolldown, lightningcss ほか |
 
-`vite.config.js` の基本構造は変わらない（`rollupOptions` という名称も維持）。Rolldown が Rollup のプラグイン API 互換を目標としているためだ。
 
 ## 12. esbuild の役割の移管先
 
@@ -115,22 +101,6 @@ Vite 8 では、esbuild が担っていた処理がすべて **Oxc**（Rolldown 
 > Rolldown ＝ **Rollup の役割 ＋ esbuild の役割**を  
 Rust の 1 ツール（Oxc ベース）に統合したもの。
 
-## 15. Vite 8 更新時のチェックリスト
-
-| 観点 | 内容 |
-|---|---|
-| アプリケーションのコード | 影響なし。`import` の記述も同じ |
-| `vite.config.js` | 基本構造は同じ（`rollupOptions` 等の名称も維持）。メジャー更新のため、移行ガイドの破壊的変更（対応 Node バージョン・非推奨 API・デフォルト値）を確認する |
-| 開発サーバーの動作 | 動作モデルは同じ。内部エンジンが Rolldown / Oxc に変わり、事前バンドル生成物のハッシュ等は変わる |
-| `dist` のスナップショットテスト | すべて失敗する。エンジンが変わり出力の中身が変わるため。スナップショットを更新して対応する |
-| CSS の出力 | lightningcss は構文の lowering も行う（`color-scheme` の展開など）。出力の差分が大きくなる場合がある |
-| `node_modules` のサイズ | 約 21 MB → 約 33 MB（Rust 製バイナリを含むため）。CI のキャッシュ設定に影響する場合がある |
-| Rollup プラグイン | Rolldown は API 互換を目標とするが完全ではない。使用中のプラグインの動作確認が必要 |
-| 参考情報の鮮度 | 「開発は esbuild / 本番は Rollup」という記述は Vite 7 までのもの。`npm ls` で実際の依存を確認する |
-
-変更点を把握できれば、更新の可否は判断できる。リリース前に `vite preview` で本番ビルドを確認する点は、バージョンに関わらず共通である。
-
----
 
 ## パート4 · なぜビルドが必要か
 
@@ -162,7 +132,7 @@ import / export       // ← 今日の主役。モジュール
 古いブラウザ（IE11 など）はこれらを**構文エラー**にした。  
 だから長く「新しい構文で書いて、古い書き方に変換して配る」のが必須だった（→ あとで回収）。
 
-## 18. <script> タグを並べていた時代
+## 18. \<script> タグを並べていた時代
 
 ```
 <script src="jquery.js"></script>
@@ -444,17 +414,3 @@ webpack にとって**世界は全部 JS**。loader は「JS 以外を JS に翻
 
 手を動かす場合：`02-vite`（:5173）と `02b-vite7`（:5273）を同時に起動し、 両方を `npm run build` して `diff -rq` で出力を比較する。  
 webpack を含む詳細版は `SLIDES.html`、前提知識は `docs/js-background.md`。
-
-## 38. よくあるエラーと原因
-
-| 症状 | 原因 |
-|---|---|
-| Failed to resolve module specifier | バンドラを通していない。生の bare import |
-| Cannot use import statement outside a module | `type="module"` が無い / Node の `"type"` 未設定 |
-| Module parse failed: Unexpected token | **対応する loader が `module.rules` に無い** |
-| require is not defined | CJS 前提のコードを ESModule 環境で実行している |
-| __dirname is not defined | ESModule には無い。`import.meta.dirname` を使う |
-| process is not defined | Node の API をブラウザ向けコードで使用。webpack 5 で自動 polyfill 廃止 |
-| dev では動くが本番で壊れる | Vite の dev / build アーキテクチャ差。`vite preview` で確認 |
-| バンドルが異様に大きい | `import * as` / CJS パッケージで tree shaking が効いていない |
-
