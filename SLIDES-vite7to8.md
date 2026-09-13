@@ -86,32 +86,27 @@ esbuild(開発ビルド)の場合は元々goで書かれているため、実行
 | `vite` パッケージの依存 | esbuild, rollup ほか | rolldown, lightningcss ほか |
 
 
-## 12. esbuild の役割の移管先
 
-Vite 7 は **Rollup と esbuild の 2 ツール構成**だった。 Rollup がバンドルを担当し、JS の変換・minify は esbuild が担当していた。  
-Vite 8 では、esbuild が担っていた処理がすべて **Oxc**（Rolldown が土台とする Rust 製ツールチェーン）に移った。
+## 4. なぜ「ビルド」が必要か
 
-| esbuild が担当していた処理（Vite 7） | Vite 8 での担当 |
-|---|---|
-| 依存の事前バンドル（開発時 / `optimizeDeps`） | Rolldown |
-| TS・JSX → JS の変換（開発・本番とも） | Oxc |
-| 構文のダウンレベル（`build.target`） | Oxc |
-| JS の minify（Vite の既定 minifier） | Oxc |
+インタープリタベースの言語でなぜビルドある理由は、コンパイルではなくてフォーマット整理。
 
-> Rolldown ＝ **Rollup の役割 ＋ esbuild の役割**を  
-Rust の 1 ツール（Oxc ベース）に統合したもの。
+buildした結果何かしらのバイナリができるのではなくて、jsのファイルに変更されてブラウザ上で解釈される。
 
 
-## パート4 · なぜビルドが必要か
+## 5. Viteが行っているビルド動作
+viteが具体的に行っている動作は以下の通り。
 
-## 16. なぜ「ビルド」が必要か
+| 工程 | 内容 |
+| --- | --- |
+| ① Resolve | 依存グラフを解決 |
+| ② Load | グラフ上の全モジュールを読む |
+| ③ Transform | 全モジュールを変換 (ts, react, vue, ... -> js) |
+| ④ Optimize | tree shaking / minify / code splitting |
+| ⑤ Emit | `dist/` にハッシュ名で書く ＋ `index.html` に `<link>` 注入 |
 
-パート1〜3 で見たとおり、Vite は内部で「ビルド」を行っている。 では、そもそもビルドとは何をする処理で、なぜ必要になったのか。  
-ここを押さえると、設定ファイルとエラーメッセージが読めるようになる。
+- dev は ①②③ を一部だけ実行して、④⑤ をまるごと飛ばす。
 
-- このパート（4）：ビルドが必要になった経緯（モジュールの歴史）
-- パート5：ビルドの5工程（全ツール共通の骨格）
-- パート6：各ツールの内部構造（webpack / Rollup / Rolldown）
 
 ## 17. ECMAScript と JavaScript
 
@@ -146,7 +141,7 @@ import / export       // ← 今日の主役。モジュール
 対策は IIFE（関数で囲う）や `window.MyApp = {}` の名前空間パターン。  
 ファイル数が増えると、この方式は管理が難しくなる。
 
-## 19. モジュールシステムの系譜（CommonJS / AMD / UMD / ESModule）
+## 19. モジュールシステムの系譜と ESModule の仕様変遷
 
 | 方式 | 登場 | 構文 | どこ用 |
 |---|---|---|---|
@@ -155,8 +150,23 @@ import / export       // ← 今日の主役。モジュール
 | UMD | 2011頃 | 上2つ＋グローバルを全部書いた定型 | 配布ライブラリ |
 | ESModule | **2015 · 言語仕様** | import / export | 言語標準（今の前提） |
 
-- **ESModule だけが「静的」** — `import` は必ずファイル先頭。`if` の中には書けない
+ESModule は2015年に完成したわけではなく、**その後もバージョンごとに機能が追加されている**。
+
+| 版 / 年 | 決めた場所 | 追加されたもの |
+|---|---|---|
+| **ES2015** | ECMAScript | `import` / `export`、ライブバインディング（※ローダーは仕様外） |
+| 2017 | HTML | `<script type="module">` が主要ブラウザで動く |
+| 2019 | Node.js | `package.json` の `"type": "module"` / `exports` |
+| **ES2020** | ECMAScript | `import()`（動的 import）/ `import.meta` / `export * as ns` |
+| 2021〜 | HTML | Import Maps（bare specifier をブラウザで解決） |
+| **ES2022** | ECMAScript | Top-level await |
+| 2024 | Node.js | `require(esm)`（22.12 / 20.19〜）← Vite 7 が Node 要件を上げた理由 |
+| **ES2025** | ECMAScript | Import Attributes（`with { type: "json" }`）/ JSON Modules |
+| 提案中 | TC39 | `import defer`（評価の遅延）/ `import source`（WASM 向け）など |
+
+- **ESModule だけが「静的」** — `import` は必ずファイル先頭。`if` の中には書けない（動的に読みたいときは ES2020 の `import()` を使う）
 - だからバンドラは**コードを実行せずに**依存グラフを解析できる → tree shaking の前提
+- **ファイルの探し方（ローダー）は言語仕様に含まれない** → ブラウザ・Node・バンドラがそれぞれ決める（→ 23. bare specifier）
 
 ## 20. CommonJS による依存解決
 
@@ -253,20 +263,6 @@ polyfill ＝ 存在しない **API** を実装で埋める。別物だ。
 
 <!-- 📊 図版: ビルドの5工程。エントリから Resolve・Load・Transform を繰り返して依存グラフを作り、Optimize と Emit でグラフ全体を出力する流れ図 -->
 
-## 27. 5工程で見る開発サーバーと本番ビルド
-
-| 工程 | 開発サーバー（`vite`） | 本番ビルド（`vite build`） |
-|---|---|---|
-| ① Resolve | リクエストのたびに1つずつ。bare → `/node_modules/.vite/deps/…` に書き換え | 依存グラフを**一括で**解決 |
-| ② Load | 要求されたファイルだけ読む | グラフ上の全モジュールを読む |
-| ③ Transform | 要求された分だけその場で（TS/JSX、CSS） | 全モジュールを変換 |
-| ④ Optimize | — やらない（ブラウザにそのまま渡す） | tree shaking / minify / code splitting |
-| ⑤ Emit | — 書き出さない（HTTP レスポンスで返す） | `dist/` にハッシュ名で書く ＋ `index.html` に `<link>` 注入 |
-
-- **dev は ④⑤ をまるごと飛ばし、①②③ を「必要な分だけ」遅延実行**
-- **build は 5工程を、依存グラフ全体に一気にかける**
-
-> 7 → 8 では、③ Transform と ④ Optimize のエンジン、および開発時の事前バンドルのエンジンが置き換わった。
 
 ## 28. 用語の整理：transpile / bundle / minify ほか
 
@@ -414,3 +410,24 @@ webpack にとって**世界は全部 JS**。loader は「JS 以外を JS に翻
 
 手を動かす場合：`02-vite`（:5173）と `02b-vite7`（:5273）を同時に起動し、 両方を `npm run build` して `diff -rq` で出力を比較する。  
 webpack を含む詳細版は `SLIDES.html`、前提知識は `docs/js-background.md`。
+
+
+
+
+---
+
+
+## 12. esbuild の役割の移管先
+
+Vite 7 は **Rollup と esbuild の 2 ツール構成**だった。 Rollup がバンドルを担当し、JS の変換・minify は esbuild が担当していた。  
+Vite 8 では、esbuild が担っていた処理がすべて **Oxc**（Rolldown が土台とする Rust 製ツールチェーン）に移った。
+
+| esbuild が担当していた処理（Vite 7） | Vite 8 での担当 |
+|---|---|
+| 依存の事前バンドル（開発時 / `optimizeDeps`） | Rolldown |
+| TS・JSX → JS の変換（開発・本番とも） | Oxc |
+| 構文のダウンレベル（`build.target`） | Oxc |
+| JS の minify（Vite の既定 minifier） | Oxc |
+
+> Rolldown ＝ **Rollup の役割 ＋ esbuild の役割**を  
+Rust の 1 ツール（Oxc ベース）に統合したもの。
