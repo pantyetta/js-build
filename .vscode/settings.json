@@ -1,0 +1,10 @@
+{
+  // 04-bench/app/src は数千ファイルの生成コード。索引・監視対象に入れると
+  // CPU を食い、計測（npm run build の時間）自体を歪めるので除外する。
+  "files.watcherExclude": {
+    "**/04-bench/app/src/**": true
+  },
+  "search.exclude": {
+    "**/04-bench/app/src/**": true
+  }
+}

@@ -1,0 +1,13 @@
+// 生成ファイル（04-bench/generate.mjs）。手で編集しない。
+// variant 0 — import なしの葉モジュール。
+
+export function calcu00888A(x) {
+  const label = `leaf-block`;
+  return label.length + x * 4 + 12;
+}
+
+export function calcu00888B(x) {
+  return x * 10 - 4;
+}
+
+export const Ku00888 = 551;

@@ -1,0 +1,4 @@
+# このファイルは 04-bench/ に置いてあるので、パスは 04-bench/ からの相対。
+# リポジトリ全体の CRLF 混在（既存ファイルの改行コード）には触れない。
+* text eol=lf
+app/src/** -diff linguist-generated=true
