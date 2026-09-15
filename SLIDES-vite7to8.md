@@ -19,6 +19,7 @@ Vite 8 のリリースにともなう Vite 7 との差分を起点として、JS
 | **5 · ビルドの5工程** | Resolve / Load / Transform / Optimize / Emit | 
 | **6 · ツールの内部構造** | webpack / Rollup / Rolldown の出力と構造 | 
 | **7 · まとめ** | 5工程で振り返る、確認事項 | 
+| **付録** | 5工程ごとのツール別の担当と設定（Vite / webpack / esbuild） |
 
 パート1〜3 で Vite の動きと 7 → 8 の変更を具体的に確認し、パート4〜5 で「なぜそうなるのか」を掘り下げる。
 
@@ -96,6 +97,9 @@ buildした結果何かしらのバイナリができるのではなくて、js�
 ## 5. Viteが行っているビルド動作
 viteが具体的に行っている動作は以下の通り。
 
+<!-- 📊 図版: ビルドの5工程。エントリから Resolve・Load・Transform を繰り返して依存グラフを作り、Optimize と Emit でグラフ全体を出力する流れ図 -->
+
+
 | 工程 | 内容 |
 | --- | --- |
 | ① Resolve | 依存グラフを解決 |
@@ -134,6 +138,98 @@ ESModule は2015年に完成したわけではなく、**その後もバージ�
 - そのため、バンドラは**コードを実行せずに**依存グラフを解析できる → tree shaking の前提
 - **ファイルの探し方（ローダー）は言語仕様に含まれない** → ブラウザ・Node・バンドラがそれぞれ決める（→ 23. bare specifier）
 
+
+## 7. ① Resolve — import 文を実ファイルに対応づける
+
+`import` に書かれた**文字列（specifier）**を、ディスク上の**実ファイルのパス**に変換する工程。
+
+```
+import { setupCounter } from './counter.js';  // 相対パス
+import { nanoid }       from 'nanoid';        // bare specifier
+```
+
+| 種類 | 解決のしかた |
+|---|---|
+| 相対 `./counter.js` | 呼び出し元からの相対パス。拡張子の省略・`index.js` の補完もここ |
+| bare `nanoid` | `node_modules/` を上位ディレクトリへ辿って探す → `package.json` の `exports` / `main` で入口を決める |
+
+実際に `nanoid` を解決すると、`package.json` の `exports["."].browser` が選ばれ `node_modules/nanoid/index.browser.js` に対応づけられる（同じ `'nanoid'` でも Node 向けなら `index.js`）。
+
+- 解決したファイルを ②③ してまた `import` を見つけ、**①②③ を再帰的に繰り返す**ことで依存グラフができる
+- **ブラウザはこの探索をしない**（→ 23）ので、誰かが肩代わりするしかない
+
+## 8. ② Load — モジュールの中身を取り出す
+
+①で決まったパスから、**中身を文字列（またはバイナリ）として読む**工程。
+
+ほとんどはファイルの読み込みだが、ここが独立した工程になっているのは **「モジュール＝ファイル」とは限らない**ため。
+
+| 読む対象 | 例 |
+|---|---|
+| 普通のファイル | `src/main.js`, `src/style.css` |
+| 仮想モジュール | ディスクに実体がなく、プラグインが中身をその場で生成して返す（ビルド日時、ルート一覧など） |
+| キャッシュ | 前回の処理結果を作り置きしておき、ファイルの代わりに返す |
+
+- この時点では CSS も画像も**ただの中身**。まだ JS ではない
+- 「どこから読むか」を差し替えられるので、**存在しないファイルを import させる**ことができる
+
+## 9. ③ Transform — すべてを JS モジュールに変換する
+
+②で読んだ中身を、**JS（ESModule）として成立する形**に書き換える工程。
+
+| 入力 | 変換後 |
+|---|---|
+| `.ts` / `.tsx` | 型注釈を**取り除く**だけ（型チェックはしない） |
+| `.jsx` / `.vue` / `.svelte` | `createElement` 相当の JS 呼び出しへ |
+| `.css` | dev：`<style>` を注入する JS ／ build：一旦 JS にしてから④で `.css` に抽出 |
+| `.json` / `.svg` など | `export default …` の形へ |
+
+```
+import './style.css';   // ← これが成立するのは、CSS が③で JS にされるから
+```
+
+- **ファイルの数は変わらない**（数を減らすのは④の bundle → 28）
+- 型チェックは**行われない**。TS の型エラーはビルドを止めないので `tsc --noEmit` を別に回す
+- **Vite の dev サーバーが実行するのはここまで**。しかもリクエストが来たモジュールだけを変換する
+
+## 10. ④ Optimize — グラフ全体をまとめて最適化する
+
+①〜③で**全モジュールが揃って初めて**できる処理。内訳は4つ。
+
+| 処理 | 内容 | サンプルでの結果 |
+|---|---|---|
+| bundle | 依存を結合し、名前が衝突する変数はリネームする | `main` / `counter` / `utils` / `nanoid` → `index-*.js` 1本 |
+| tree shaking | どこからも使われない export を落とす | `utils.js` の `unused()` が消える（`UNUSED_MARKER` の出現数 **0**） |
+| code splitting | 動的 `import()` を境に別ファイルへ | `await import('./heavy.js')` → `heavy-CuXC7Vo8.js` |
+| minify | 変数名短縮・空白削除・デッドコード除去 | `export const heavyMessage = …` → `var e=…;export{e as heavyMessage}` |
+
+- tree shaking の判断材料は `package.json` の **`sideEffects`** と **`/*#__PURE__*/`**（`nanoid` は `"sideEffects": false` を宣言している）
+- **グラフ全体が前提**なので、1モジュールずつ処理する dev では原理的に実行できない ← dev と build が別実装になる理由
+
+## 11. ⑤ Emit — `dist/` に書き出す
+
+④で確定したチャンクを、**配信できる形のファイル群**として書き出す工程。
+
+```
+dist/
+├─ index.html
+└─ assets/
+   ├─ index-Bx43ohxV.js     ← エントリ（ファイル名に内容ハッシュ）
+   ├─ index-BBFHx35T.css    ← ③で JS 化した CSS を抽出したもの
+   ├─ heavy-CuXC7Vo8.js     ← 動的 import で分割されたチャンク
+   └─ *.js.map              ← sourcemap
+```
+
+| やること | 具体的な中身 |
+|---|---|
+| 内容ハッシュ付きの命名 | 中身が変わった時だけ名前が変わる → **ブラウザキャッシュを効かせるため** |
+| HTML への注入 | ソースの `<script src="/src/main.js">` を、ハッシュ付き `<script>` ＋ `<link>` に書き換える |
+| アセットの処理 | 小さい画像などは base64 で JS / CSS に埋め込み、大きいものは `assets/` へコピー |
+| sourcemap の出力 | minify 後のコードを元ソースに対応づける |
+
+- ファイル名が毎回変わるので、**HTML を書き換える工程がセットで必要**になる
+
+> ここまでが `npm run build`。以降は生成された静的ファイルを配信するだけで、実行時にビルドツールは関与しない。
 
 ## 20. CommonJS による依存解決
 
@@ -221,28 +317,8 @@ polyfill ＝ 存在しない **API** を実装で埋める。別物である。
 > 各ツールは、既存の問題を解決するために積み上げられてきた。  
 そのため、設定項目には**解決したかった課題**が存在する。
 
-## 25b. ESLint とビルドツールの違い
-
-- **ESLint（2013年〜）** はコードを**静的解析**し、バグになりやすい書き方やスタイル違反を検出するツール。**構文は書き換えない**（`--fix` は一部ルールに限った例外）。
-- Vite / webpack などの**ビルドとは別工程**。`npm run build` の成果物 (`dist/`) の中身に ESLint は関与しない。
-- 「動くコードを作る」（ビルド）と「良いコードを保つ」（lint）は目的が違う → エディタや CI 上で別途実行するのが一般的。
-
-| ツール | 役割 |
-|---|---|
-| ESLint | 構文・パターンの静的解析（プラグインで拡張可能） |
-| Prettier | コードの**整形**（フォーマット。lintとは別軸） |
-
-> lint はコードの問題を実行前に検出する仕組みであり、build は動作するコードを生成する仕組みである。  
-目的が異なるため、ツールも別に存在する。
-
----
 
 ## パート5 · ビルドの5工程
-
-## 26. ビルドの5工程
-
-<!-- 📊 図版: ビルドの5工程。エントリから Resolve・Load・Transform を繰り返して依存グラフを作り、Optimize と Emit でグラフ全体を出力する流れ図 -->
-
 
 ## 28. 用語の整理：transpile / bundle / minify ほか
 
@@ -387,3 +463,126 @@ webpack の設計では、あらゆる依存が JS モジュールとして扱�
 
 検証手順：`02-vite`（:5173）と `02b-vite7`（:5273）を同時に起動し、両方を `npm run build` して `diff -rq` で出力を比較する。  
 webpack を含む詳細版は `SLIDES.html`、前提知識は `docs/js-background.md`。
+
+---
+
+## 付録 · ツールごとの対応と設定
+
+本編 7〜11 の各工程を、Vite 7 / Vite 8 / webpack 5 / esbuild で具体的にどう扱うかの一覧。設定例は本リポジトリの `01-esbuild` / `02-vite` / `02b-vite7` / `03-webpack` に対応する。
+
+## 付録A. 5工程 × ツールの担当
+
+| 工程 | Vite 7 | Vite 8 | webpack 5 | esbuild |
+|---|---|---|---|---|
+| ① Resolve | Vite 内蔵の解決処理（JS） | oxc-resolver（Rust） | enhanced-resolve | 内蔵（Go） |
+| ② Load | Rollup のプラグイン機構 | Rolldown のプラグイン機構 | NormalModule | 内蔵 |
+| ③ Transform | esbuild | Oxc ／ CSS は lightningcss | loader（babel-loader, ts-loader, css-loader…） | 内蔵 |
+| ④ Optimize | Rollup ＋ esbuild（minify） | Rolldown ＋ Oxc / lightningcss（minify） | seal フェーズ ＋ TerserPlugin / SplitChunksPlugin | 内蔵 |
+| ⑤ Emit | Rollup ＋ Vite の HTML 処理 | Rolldown ＋ Vite の HTML 処理 | `emit` フック ＋ HtmlWebpackPlugin | 書き出しのみ（**HTML 注入なし**） |
+| dev サーバー | ③を要求された分だけ（④⑤なし） | 同左 | **①〜⑤を全部実行**（出力先がメモリ／minify なし） | ①〜⑤を実行（HMR なし） |
+
+プラグインが各工程に割り込む入口（フック）の対応：
+
+| 工程 | Rollup / Rolldown / Vite | webpack | esbuild |
+|---|---|---|---|
+| ① Resolve | `resolveId` | `resolve.plugins` / `NormalModuleReplacementPlugin` | `onResolve` |
+| ② Load | `load` | loader（読み込み結果を受け取る） | `onLoad` |
+| ③ Transform | `transform` | loader | `onLoad` の中で変換まで行う |
+| ④ Optimize | `renderChunk` | `compilation.hooks.processAssets` など | — |
+| ⑤ Emit | `generateBundle` / `writeBundle` | `compiler.hooks.emit` | `onEnd` |
+
+## 付録B. ① Resolve の設定
+
+```
+// Vite（vite.config.js）
+resolve: {
+  alias: { '@': '/src' },                       // import '@/utils.js' → /src/utils.js
+  extensions: ['.mjs', '.js', '.ts', '.json'],  // 拡張子の省略を許す順
+  conditions: ['browser'],                      // package.json の exports のどの条件を選ぶか
+},
+```
+
+```
+// webpack（webpack.config.js）
+resolve: {
+  alias: { '@': path.resolve(__dirname, 'src') },
+  extensions: ['.js', '.mjs', '.json'],
+  conditionNames: ['browser', 'import'],
+},
+```
+
+```
+// esbuild（build.mjs）
+entryPoints: ['src/main.js'],      // グラフを辿り始める起点
+platform: 'browser',               // exports の browser 条件を優先
+resolveExtensions: ['.js', '.ts'],
+```
+
+- Vite では `index.html` そのものがエントリ。webpack / esbuild は JS ファイルをエントリに指定する
+
+## 付録C. ② Load ・ ③ Transform の設定
+
+**Vite** — 変換はほぼ自動。独自の読み込み・変換はプラグインで足す
+
+```
+plugins: [{
+  name: 'build-info',
+  resolveId(id)       { if (id === 'virtual:build-info') return '\0virtual:build-info'; },
+  load(id)            { if (id === '\0virtual:build-info') return `export const builtAt = ${Date.now()}`; },
+  transform(code, id) { if (id.endsWith('.txt')) return `export default ${JSON.stringify(code)}`; },
+}],
+define: { __APP_VERSION__: JSON.stringify('1.0.0') },  // ソース中の識別子を置換
+```
+
+- JSX などの変換オプションは Vite 7 では `esbuild`、Vite 8 では `oxc` で指定する
+
+**webpack** — 拡張子ごとに loader を明示する（配列は**末尾から先頭へ**適用 → 32）
+
+```
+module: {
+  rules: [
+    { test: /\.css$/i, use: [isProd ? MiniCssExtractPlugin.loader : 'style-loader', 'css-loader'] },
+    { test: /\.(png|jpe?g|gif|svg|woff2?)$/i, type: 'asset' },
+    { test: /\.tsx?$/, use: 'ts-loader', exclude: /node_modules/ },
+  ],
+},
+```
+
+**esbuild** — 拡張子 → 扱い方の対応表を渡す
+
+```
+loader: { '.css': 'css', '.svg': 'dataurl', '.png': 'file' },
+target: ['es2020', 'chrome100', 'firefox100', 'safari15'],  // これより新しい構文はダウンレベル変換
+```
+
+## 付録D. ④ Optimize の設定
+
+| 処理 | Vite | webpack | esbuild |
+|---|---|---|---|
+| bundle | 常に有効（build 時） | 常に有効 | `bundle: true`（false だと変換のみ） |
+| tree shaking | 常に有効 | `mode: 'production'` で有効（`optimization.usedExports` / `sideEffects`） | `bundle: true` で有効（`treeShaking`） |
+| code splitting | 動的 import で自動 ／ `rollupOptions.output.manualChunks` | `optimization.splitChunks` | `splitting: true`（`format: 'esm'` 時のみ） |
+| minify | `build.minify` / `build.cssMinify` | `optimization.minimize` / `minimizer` | `minify: true` |
+
+```
+// Vite：依存を vendor チャンクにまとめる
+build: { rollupOptions: { output: { manualChunks: { vendor: ['nanoid'] } } } },
+
+// webpack：node_modules 由来を自動で分離
+optimization: { splitChunks: { chunks: 'all' } },
+
+// esbuild：動的 import と共有モジュールを別チャンクに
+bundle: true, format: 'esm', splitting: true, minify: true,
+```
+
+## 付録E. ⑤ Emit の設定
+
+| 項目 | Vite | webpack | esbuild |
+|---|---|---|---|
+| 出力先 | `build.outDir`（既定 `dist`） | `output.path` | `outdir` |
+| ハッシュ付き命名 | 既定で `assets/[name]-[hash].js` | `output.filename: '[name].[contenthash:8].js'` | `entryNames: '[name]-[hash]'` |
+| HTML への注入 | 自動（`index.html` がエントリのため） | `HtmlWebpackPlugin` | なし（自分で書く） |
+| CSS の抽出 | 自動 | `MiniCssExtractPlugin` | `loader: { '.css': 'css' }` で自動 |
+| 小さいアセットの埋め込み | `build.assetsInlineLimit`（既定 4096 byte） | `type: 'asset'`（既定 8KB） | `loader` で `dataurl` / `file` を選ぶ |
+| sourcemap | `build.sourcemap` | `devtool` | `sourcemap` |
+| 出力内容の解析 | — | `--json` ＋ webpack-bundle-analyzer | `metafile: true` ＋ `analyzeMetafile` |
