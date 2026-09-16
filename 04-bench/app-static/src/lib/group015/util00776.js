@@ -1,0 +1,17 @@
+// 生成ファイル（04-bench/generate.mjs）。手で編集しない。
+// variant 5 — import なしの葉モジュール。
+
+const REu00776 = /^[a-z]+6$/;
+
+export async function calcu00776A(x) {
+  const y = await Promise.resolve(x * 7);
+  return y + 30;
+}
+
+export function calcu00776B(x, opts) {
+  const extra = opts?.extra ?? 7;
+  const merged = [...[x, extra], 5];
+  return REu00776.test("leaf") ? merged.length + x : merged.length - x;
+}
+
+export const Ku00776 = 753;

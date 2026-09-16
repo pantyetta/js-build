@@ -17,7 +17,7 @@ JS のビルドツール（esbuild / Vite / webpack）を、仕組みから理�
 | [`02-vite/`](./02-vite/) | dev と build でアーキテクチャが違う理由 |
 | [`02b-vite7/`](./02b-vite7/) | Vite 7（Rollup + esbuild）と 8（Rolldown）の出力を見比べる |
 | [`03-webpack/`](./03-webpack/) | `__webpack_require__` の正体と、loader / plugin |
-| [`04-bench/`](./04-bench/) | Vite 7 → 8 のビルド**時間**を実測する（約 6,900 モジュールの巨大プロジェクトで ~20 倍差） |
+| [`04-bench/`](./04-bench/) | Vite 7 → 8 のビルド**時間**を実測する（約 6,900 モジュールの巨大プロジェクトで、コード分割ありは ~20 倍、なしは ~48 倍差） |
 | [`SLIDES.html`](./SLIDES.html) | 勉強会用スライド（70 分）。パート1で前提知識（[js-background.md](./docs/js-background.md)）を扱う。`SLIDES-standalone.html` は単体版 |
 | [`SLIDES-vite7to8.html`](./SLIDES-vite7to8.html) | 勉強会スライド（約70 分）。前半で Vite 7 → 8 の変更と実務影響、後半で JS のビルドを歴史から深掘り。`SLIDES-vite7to8-standalone.html` は単体版 |
 

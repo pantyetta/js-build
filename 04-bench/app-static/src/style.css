@@ -1,0 +1,14 @@
+/* 生成ファイル（04-bench/generate.mjs）。手で編集しない。 */
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+  padding: 1rem;
+}
+
+button {
+  margin: 0.15rem;
+}

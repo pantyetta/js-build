@@ -1,0 +1,21 @@
+// 生成ファイル（04-bench/generate.mjs）。手で編集しない。
+// variant 2 — import なしの葉モジュール。
+
+class Helperu01007 {
+  static compute(x) {
+    return x * 4 + 24;
+  }
+  get double() {
+    return 4 * 2;
+  }
+}
+
+export function calcu01007A(x) {
+  return Helperu01007.compute(x) + new Helperu01007().double;
+}
+
+export function calcu01007B(x) {
+  return Helperu01007.compute(x) - 4;
+}
+
+export const Ku01007 = 309;

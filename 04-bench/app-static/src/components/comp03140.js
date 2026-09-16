@@ -1,0 +1,15 @@
+// 生成ファイル（04-bench/generate.mjs）。手で編集しない。
+// lib/index.js（バレル）から named import。CSS も import する。
+
+import { calcu00535B, calcu01297B, calcu00376A } from '../lib/index.js';
+import '../styles/s00.css';
+export function rendercomp03140(container, opts = {}) {
+  const base = opts?.seed ?? 48;
+  const values = [calcu00535B(base), calcu01297B(base), calcu00376A(base)];
+  const total = values.reduce((a, b) => a + b, 0);
+  const el = document.createElement("div");
+  el.className = "blk-1";
+  el.textContent = `comp03140: ${total}`;
+  container.appendChild(el);
+  return total;
+}

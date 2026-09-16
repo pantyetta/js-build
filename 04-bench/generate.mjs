@@ -2,31 +2,42 @@
 // 04-bench/generate.mjs
 //
 // Vite 7 (Rollup) と Vite 8 (Rolldown) のビルド時間を実測するための、
-// 決定論的に巨大な「素の JS」プロジェクトを 1 箇所（app/）に生成する。
-// vite7/ と vite8/ はここへの symlink 経由でこのソースを共有する。
+// 決定論的に巨大な「素の JS」プロジェクトを 1 箇所（app/ または app-static/）に生成する。
+// vite7/・vite8/・vite7-static/・vite8-static/ はここへの symlink 経由でこのソースを共有する。
 //
 // 同じ引数なら常にバイト一致の出力になる（PRNG のシード固定 + 呼び出し順固定）。
+// lib / components / pages の生成は --dynamic の値に関わらず同じ PRNG 呼び出し順になるので、
+// --dynamic true と --dynamic false は main.js 以外バイト一致になる（比較の公平性はここで担保）。
 //
 // Usage:
-//   node generate.mjs                 # デフォルト規模で生成
-//   node generate.mjs --modules 3000  # コンポーネント数を指定して生成（キャリブレーション用）
+//   node generate.mjs                                    # デフォルト規模、動的 import 版を app/ に生成
+//   node generate.mjs --modules 3000                      # 規模を変えて生成（キャリブレーション用）
+//   node generate.mjs --dynamic false --out app-static     # コード分割なし・単一バンドル版を app-static/ に生成
 
 import { mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const APP_DIR = path.join(__dirname, 'app');
-const SRC_DIR = 'src'; // APP_DIR からの相対。write() はこれを起点にする
+const SRC_DIR = 'src'; // 出力ディレクトリからの相対。write() はこれを起点にする
 
 // ---------------------------------------------------------------------------
 // CLI
 // ---------------------------------------------------------------------------
 const args = process.argv.slice(2);
-const modulesArgIdx = args.indexOf('--modules');
+function argVal(flag, fallback) {
+  const i = args.indexOf(flag);
+  return i !== -1 ? args[i + 1] : fallback;
+}
+
 // N=3750（leaf 3000 + component 3750 = 6876 モジュール）で
 // Vite 7 のビルドが ~29〜31s になることを実測済み（README.md 参照）。
-const N = modulesArgIdx !== -1 ? parseInt(args[modulesArgIdx + 1], 10) : 3750;
+const N = parseInt(argVal('--modules', '3750'), 10);
+// true: 40 ページをフラットに動的 import（現状の app/、コード分割あり）
+// false: 40 ページを全部静的 import して単一バンドルにする（app-static/、コード分割なし）
+const DYNAMIC = argVal('--dynamic', 'true') !== 'false';
+const OUT_NAME = argVal('--out', DYNAMIC ? 'app' : 'app-static');
+const APP_DIR = path.join(__dirname, OUT_NAME);
 
 const PAGE_COUNT = 40;
 const LEAVES_PER_GROUP = 50;
@@ -369,46 +380,99 @@ for (let p = 0; p < PAGE_COUNT; p++) {
 }
 
 // ---------------------------------------------------------------------------
-// 5. main.js / style.css — エントリポイント。40 ページをフラットに動的 import する
-//    （ページ→ページの連鎖はしない。main.js から直接 40 本）。
+// 5. main.js / style.css — エントリポイント。
+//
+//    DYNAMIC=true  (app/):        40 ページをフラットに動的 import する
+//                                  （ページ→ページの連鎖はしない。main.js から直接 40 本）。
+//    DYNAMIC=false (app-static/): 40 ページを全部静的 import する（コード分割なし・単一バンドル）。
+//    lib / components / pages はどちらでも同じなので、両者の差は main.js の中身だけになる。
 // ---------------------------------------------------------------------------
-const pageImportCases = Array.from({ length: PAGE_COUNT }, (_, p) => {
-  const pageId = pad(p, 2);
-  return (
-    '    case ' + p + ':\n' +
-    "      return import('./pages/page" + pageId + ".js');"
-  );
-}).join('\n');
+let mainContent;
 
-const mainContent =
-  '// 生成ファイル（04-bench/generate.mjs）。手で編集しない。\n' +
-  "import './style.css';\n\n" +
-  '// 40 ページへのフラットな動的 import（クリックされたページだけロードされる）。\n' +
-  '// ページ→ページの連鎖 import はしない。\n' +
-  'function loadPage(index) {\n' +
-  '  switch (index) {\n' +
-  pageImportCases +
-  '\n' +
-  '    default:\n' +
-  '      throw new Error("unknown page: " + index);\n' +
-  '  }\n' +
-  '}\n\n' +
-  'const app = document.querySelector("#app");\n' +
-  'const nav = document.createElement("div");\n' +
-  'const container = document.createElement("div");\n' +
-  'app.appendChild(nav);\n' +
-  'app.appendChild(container);\n\n' +
-  'for (let i = 0; i < ' + PAGE_COUNT + '; i++) {\n' +
-  '  const btn = document.createElement("button");\n' +
-  '  btn.type = "button";\n' +
-  '  btn.textContent = "page " + i;\n' +
-  '  btn.addEventListener("click", async () => {\n' +
-  '    container.innerHTML = "";\n' +
-  '    const mod = await loadPage(i);\n' +
-  '    mod.run(container);\n' +
-  '  });\n' +
-  '  nav.appendChild(btn);\n' +
-  '}\n';
+if (DYNAMIC) {
+  const pageImportCases = Array.from({ length: PAGE_COUNT }, (_, p) => {
+    const pageId = pad(p, 2);
+    return (
+      '    case ' + p + ':\n' +
+      "      return import('./pages/page" + pageId + ".js');"
+    );
+  }).join('\n');
+
+  mainContent =
+    '// 生成ファイル（04-bench/generate.mjs --dynamic true）。手で編集しない。\n' +
+    "import './style.css';\n\n" +
+    '// 40 ページへのフラットな動的 import（クリックされたページだけロードされる）。\n' +
+    '// ページ→ページの連鎖 import はしない。\n' +
+    'function loadPage(index) {\n' +
+    '  switch (index) {\n' +
+    pageImportCases +
+    '\n' +
+    '    default:\n' +
+    '      throw new Error("unknown page: " + index);\n' +
+    '  }\n' +
+    '}\n\n' +
+    'const app = document.querySelector("#app");\n' +
+    'const nav = document.createElement("div");\n' +
+    'const container = document.createElement("div");\n' +
+    'app.appendChild(nav);\n' +
+    'app.appendChild(container);\n\n' +
+    'for (let i = 0; i < ' + PAGE_COUNT + '; i++) {\n' +
+    '  const btn = document.createElement("button");\n' +
+    '  btn.type = "button";\n' +
+    '  btn.textContent = "page " + i;\n' +
+    '  btn.addEventListener("click", async () => {\n' +
+    '    container.innerHTML = "";\n' +
+    '    const mod = await loadPage(i);\n' +
+    '    mod.run(container);\n' +
+    '  });\n' +
+    '  nav.appendChild(btn);\n' +
+    '}\n';
+} else {
+  // 動的 import を一切使わない「普通の」ケース：40 ページ全部を静的 import して
+  // 1 つの JS チャンクに束ねる。コード分割ゼロの単純な SPA / ライブラリバンドルに近い。
+  const pageImports = Array.from({ length: PAGE_COUNT }, (_, p) => {
+    const pageId = pad(p, 2);
+    return "import { run as runPage" + pageId + " } from './pages/page" + pageId + ".js';";
+  }).join('\n');
+
+  const pageRunCases = Array.from({ length: PAGE_COUNT }, (_, p) => {
+    const pageId = pad(p, 2);
+    return (
+      '    case ' + p + ':\n' +
+      '      return runPage' + pageId + '(container);'
+    );
+  }).join('\n');
+
+  mainContent =
+    '// 生成ファイル（04-bench/generate.mjs --dynamic false）。手で編集しない。\n' +
+    "import './style.css';\n\n" +
+    '// 40 ページを全部静的 import。import() は 1 つも使わない（コード分割なし）。\n' +
+    pageImports +
+    '\n\n' +
+    'function runPage(index, container) {\n' +
+    '  switch (index) {\n' +
+    pageRunCases +
+    '\n' +
+    '    default:\n' +
+    '      throw new Error("unknown page: " + index);\n' +
+    '  }\n' +
+    '}\n\n' +
+    'const app = document.querySelector("#app");\n' +
+    'const nav = document.createElement("div");\n' +
+    'const container = document.createElement("div");\n' +
+    'app.appendChild(nav);\n' +
+    'app.appendChild(container);\n\n' +
+    'for (let i = 0; i < ' + PAGE_COUNT + '; i++) {\n' +
+    '  const btn = document.createElement("button");\n' +
+    '  btn.type = "button";\n' +
+    '  btn.textContent = "page " + i;\n' +
+    '  btn.addEventListener("click", () => {\n' +
+    '    container.innerHTML = "";\n' +
+    '    runPage(i, container);\n' +
+    '  });\n' +
+    '  nav.appendChild(btn);\n' +
+    '}\n';
+}
 
 write('main.js', mainContent);
 
@@ -431,19 +495,21 @@ write(
 // ---------------------------------------------------------------------------
 // index.html
 // ---------------------------------------------------------------------------
+const symlinkTargets = DYNAMIC ? 'vite7/ と vite8/' : 'vite7-static/ と vite8-static/';
+const titleSuffix = DYNAMIC ? ' (dynamic import)' : ' (static, no code splitting)';
 const indexHtml =
   '<!doctype html>\n' +
   '<html lang="ja">\n' +
   '  <head>\n' +
   '    <meta charset="UTF-8" />\n' +
   '    <meta name="viewport" content="width=device-width, initial-scale=1.0" />\n' +
-  '    <title>04 Bench</title>\n' +
+  '    <title>04 Bench' + titleSuffix + '</title>\n' +
   '  </head>\n' +
   '  <body>\n' +
   '    <div id="app"></div>\n' +
   '    <!--\n' +
-  '      生成ファイル（04-bench/generate.mjs が app/index.html も書き出す）。\n' +
-  '      vite7/index.html と vite8/index.html はこのファイルへの symlink。\n' +
+  '      生成ファイル（04-bench/generate.mjs が ' + OUT_NAME + '/index.html も書き出す）。\n' +
+  '      ' + symlinkTargets + ' はこのファイルへの symlink。\n' +
   '    -->\n' +
   '    <script type="module" src="/src/main.js"></script>\n' +
   '  </body>\n' +
@@ -453,7 +519,8 @@ writeFileSync(path.join(APP_DIR, 'index.html'), indexHtml, 'utf8');
 fileCount += 1;
 
 // ---------------------------------------------------------------------------
-console.log('generated ' + fileCount + ' files into 04-bench/app/');
+console.log('generated ' + fileCount + ' files into 04-bench/' + OUT_NAME + '/');
+console.log('  dynamic import: ' + DYNAMIC);
 console.log('  components: ' + N + ' (common: ' + commonComponents.length + ', dedicated: ' + dedicatedComponents.length + ')');
 console.log('  leaf modules: ' + leafCount + ' across ' + groupCount + ' barrel groups');
 console.log('  pages: ' + PAGE_COUNT);

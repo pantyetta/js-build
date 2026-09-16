@@ -2,3 +2,4 @@
 # リポジトリ全体の CRLF 混在（既存ファイルの改行コード）には触れない。
 * text eol=lf
 app/src/** -diff linguist-generated=true
+app-static/src/** -diff linguist-generated=true

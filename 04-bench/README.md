@@ -5,28 +5,42 @@
 Rolldown の並列バンドルが仕事をする前にビルドが終わってしまうから。
 
 ここでは Rolldown が実際に効いてくる規模のプロジェクトを使い、**同じ結論が規模を変えると
-逆転すること**を実測する。
+逆転すること**を実測する。さらに、**コード分割あり（動的 import）** と
+**コード分割なし（静的 import・単一バンドル）** の両方を用意し、
+「よくある構成」でどちらでも差が出ることを確認する。
 
 ## 構成
 
 ```
 04-bench/
-  generate.mjs     app/ を決定論的に生成するスクリプト（コミットしてある）
-  app/              コードの実体はここだけ（コミットしてある）
+  generate.mjs      app/ と app-static/ を決定論的に生成するスクリプト（コミットしてある）
+  app/               コードの実体（コミットしてある）。40 ページをフラットに動的 import する
     index.html
     src/**
-  vite7/            vite 7.3.6。index.html と src は ../app への symlink
-  vite8/            vite 8.3.0。同上
+  app-static/        コードの実体（コミットしてある）。動的 import なし・全部静的 import で単一バンドル
+    index.html
+    src/**
+  vite7/             vite 7.3.6。index.html と src は ../app への symlink
+  vite8/             vite 8.3.0。同上
+  vite7-static/      vite 7.3.6。index.html と src は ../app-static への symlink
+  vite8-static/      vite 8.3.0。同上
 ```
 
-**コードの実体は 1 つ**（`app/`）。`vite7/` と `vite8/` は symlink でそれを指すだけなので、
-「ソースが同じであること」を diff で確認する必要がない — 物理的に同じファイルを指している。
+**コードの実体はバリアントごとに 1 つ**（`app/` と `app-static/`）。`vite7/` `vite8/` /
+`vite7-static/` `vite8-static/` は symlink でそれを指すだけなので、「ソースが同じであること」を
+diff で確認する必要がない — 物理的に同じファイルを指している。
+
+`app/` と `app-static/` は **`lib/` `components/` `pages/` `styles/` が完全にバイト一致**
+（同じ PRNG 呼び出し順で生成しているため）。違うのは `main.js`（40 ページを `import()` で
+遅延ロードするか、全部 `import` で先読みして 1 チャンクに束ねるか）と `index.html` の
+`<title>` だけ。**コード量・内容を揃えたまま「分割の仕方」だけを変えた比較**になっている。
 
 再生成したい場合:
 
 ```sh
-node generate.mjs                 # 既定 N=3750 で app/ を作り直す
-node generate.mjs --modules 1000  # 規模を変えて試したいとき
+node generate.mjs                                # 既定 N=3750 で app/（動的 import 版）を作り直す
+node generate.mjs --dynamic false --out app-static  # app-static/（静的・単一バンドル版）を作り直す
+node generate.mjs --modules 1000                 # 規模を変えて試したいとき
 ```
 
 同じ引数なら常にバイト一致の出力になる（PRNG のシード固定）。
@@ -36,8 +50,8 @@ node generate.mjs --modules 1000  # 規模を変えて試したいとき
 各 `vite.config.js` に `resolve.preserveSymlinks: true` を入れてある。これがないと Vite は
 symlink を realpath（`04-bench/app/src/...`）に解決してしまい、モジュール ID が
 プロジェクト root の外に出てチャンク命名などの挙動が変わる。`true` にすると、
-物理的にそこにファイルが置いてある場合と完全に同じ挙動になる。両方の config に
-**同じ値**で入っているので、7 対 8 の比較条件は崩れていない。
+物理的にそこにファイルが置いてある場合と完全に同じ挙動になる。4 つの config すべてに
+**同じ値**で入っているので、比較条件は崩れていない。
 
 ## 【重要】計測は Linux ネイティブの FS で行う（このリポジトリは 9p 上にある）
 
@@ -54,9 +68,10 @@ C:\   9p   ...     ← Windows の C: ドライブを WSL から見ている
 # 1. symlink を保ったまま Linux ネイティブ側へコピー
 cp -a 04-bench ~/bench
 
-# 2. 依存をインストール
-cd ~/bench/vite7 && npm ci
-cd ~/bench/vite8 && npm ci
+# 2. 依存をインストール（4 プロジェクト分）
+for d in vite7 vite8 vite7-static vite8-static; do
+  (cd ~/bench/$d && npm ci)
+done
 
 # 3. キャッシュを消してビルド（各 3 回、初回は fs キャッシュ / JIT ウォームアップの影響を
 #    受けるので捨てて、残り 2 回の値を見る）
@@ -65,9 +80,12 @@ rm -rf dist node_modules/.vite && npm run build
 
 `vite` 自身が出す `✓ built in Xs` を読む。専用の計測スクリプトは使わない。
 
-## 実測結果（2026-09-15、このマシン: WSL2 / 16 コア / 24GB / Node 24.19、Linux ネイティブ FS）
+## 実測結果（2026-09-16、このマシン: WSL2 / 16 コア / 24GB / Node 24.19、Linux ネイティブ FS）
 
-N=3750（leaf 3000 + component 3750 = **6,876 モジュール**、`sourcemap: true`）:
+N=3750（leaf 3000 + component 3750、`sourcemap: true`）。lib/components/pages は
+2 バリアントで完全に同じ内容。
+
+### コード分割あり（`app/` — 40 ページをフラットに動的 import）
 
 | | Vite 7.3.6（Rollup） | Vite 8.3.0（Rolldown） |
 |---|---|---|
@@ -75,11 +93,35 @@ N=3750（leaf 3000 + component 3750 = **6,876 モジュール**、`sourcemap: tr
 | modules transformed | 6,876 | 6,877 |
 | チャンク数（`dist/assets/*.js`） | 2,225 | 2,225 |
 | dist サイズ | 26 MB | 25 MB |
-| `node_modules` サイズ | 21 MB | 34 MB |
 
-**約 20 倍。** チャンク数が完全に一致しているので「違う量の仕事」を比べているわけではない
-（chunk 分割が非対称だとこの比較は成立しない — `manualChunks` を入れなかったのはこのため）。
-dist サイズも両者ほぼ同じで、tree-shaking で片方だけ極端に削れているということもない。
+**約 20 倍。**
+
+### コード分割なし（`app-static/` — 40 ページを全部静的 import、単一バンドル）
+
+| | Vite 7.3.6（Rollup） | Vite 8.3.0（Rolldown） |
+|---|---|---|
+| ビルド時間（3 回中央値） | **~29.0 s** | **~0.6 s** |
+| modules transformed | 6,875 | 6,876 |
+| チャンク数（`dist/assets/*.js`） | 1 | 1 |
+| dist サイズ | 8.5 MB | 8.1 MB |
+
+**約 48 倍。**
+
+### 読み方
+
+- **Vite 7（Rollup）のビルド時間はコード分割の有無でほぼ変わらない**（~29.0s のまま）。
+  同じ 6,875〜6,876 モジュールを処理する以上、支配的なのはグラフ構築 / tree-shaking の
+  不動点ループであって、チャンクの emit ではない。
+- **Vite 8（Rolldown）はコード分割なしのほうがさらに速い**（1.4s → 0.6s）。
+  チャンク数が減ることで Rust 側の並列 emit のオーバーヘッドがさらに小さくなる。
+- 結果として、**「コード分割なしの、よくある単純な SPA / ライブラリバンドル」構成のほうが
+  7→8 の倍率がむしろ大きく出る**（20倍 → 48倍）。動的 import を多用した構成は
+  Rollup 側の負荷は変わらないまま Rolldown 側の勝ち幅をわずかに削る、という関係になっている。
+
+チャンク数はどちらのバリアントでも 7 と 8 で完全に一致しているので、「違う量の仕事」を
+比べているわけではない（chunk 分割が非対称だとこの比較は成立しない —
+`manualChunks` を入れなかったのはこのため）。dist サイズも両者ほぼ同じで、
+tree-shaking で片方だけ極端に削れているということもない。
 
 02b-vite7 の ~180ms/~200ms と矛盾しない。むしろ両方合わせて教材として正しい：
 **「小さいプロジェクトでは差が出ない（起動オーバーヘッドが支配的）、規模が乗ると Rust 実装が
@@ -92,7 +134,7 @@ dist サイズも両者ほぼ同じで、tree-shaking で片方だけ極端に�
   論外（JS 実装なので両方の数字が terser の遅さで塗り潰される）。上の実測はこの既定差込み。
 - **CSS**: v7 は esbuild、v8 は lightningcss で minify する
   （[SLIDES-vite7to8.md](../SLIDES-vite7to8.md) 参照）。CSS ファイルを増やすとバンドラ本体の差に
-  この差が混入するため、`app/src/styles/` は 20 ファイルのみに抑えてある
+  この差が混入するため、`styles/` は 20 ファイルのみに抑えてある
   （ビルド時間に占める割合は無視できるレベル）。
 - **依存ゼロ**: `nanoid` 等の npm 依存を意図的に入れていない。node_modules の依存は
   CJS/ESM interop を伴い、そこは Rollup と Rolldown で扱いが違うため。
@@ -117,9 +159,12 @@ Vite プラグイン層のマップと合成 → `@jridgewell/sourcemap-codec` �
 ## 出力の目視確認
 
 ```sh
-cd ~/bench/vite7 && npm run preview   # http://localhost:5373/
-cd ~/bench/vite8 && npm run preview   # http://localhost:5473/
+cd ~/bench/vite7         && npm run preview   # http://localhost:5373/
+cd ~/bench/vite8         && npm run preview   # http://localhost:5473/
+cd ~/bench/vite7-static  && npm run preview   # http://localhost:5374/
+cd ~/bench/vite8-static  && npm run preview   # http://localhost:5474/
 ```
 
-ページのボタンを押すと動的 import でそのページのコンポーネントが読み込まれ、
-`lib/` の関数を実際に呼んで DOM に書き込む（tree-shaking で消えていないことの目視確認）。
+ページのボタンを押すと（動的 import 版なら import で遅延ロードしてから、静的版なら即座に）
+そのページのコンポーネントが `lib/` の関数を実際に呼んで DOM に書き込む
+（tree-shaking で消えていないことの目視確認）。

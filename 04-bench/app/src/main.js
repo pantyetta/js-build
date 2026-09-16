@@ -1,4 +1,4 @@
-// 生成ファイル（04-bench/generate.mjs）。手で編集しない。
+// 生成ファイル（04-bench/generate.mjs --dynamic true）。手で編集しない。
 import './style.css';
 
 // 40 ページへのフラットな動的 import（クリックされたページだけロードされる）。
