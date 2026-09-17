@@ -73,7 +73,7 @@ React / Vue / Svelte など、フレームワークに対応しており、フ�
 | CSS の変換・minify | esbuild | lightningcss |
 
 
-## 3. 特に恩恵を受ける本番ビルド
+## 4. 特に恩恵を受ける本番ビルド
 
 本場るビルトではバンドル処理がjs -> rustに変更されたため実行速度の向上が見込まれる。
 esbuild(開発ビルド)の場合は元々goで書かれているため、実行時間に変化はない。
@@ -87,28 +87,11 @@ esbuild(開発ビルド)の場合は元々goで書かれているため、実行
 | `vite` パッケージの依存 | esbuild, rollup ほか | rolldown, lightningcss ほか |
 
 
-## 4. なぜ「ビルド」が必要か
+## 5. なぜ「ビルド」が必要か
 
 インタープリタベースの言語でなぜビルドある理由は、コンパイルではなくてフォーマット整理。
 
 buildした結果何かしらのバイナリができるのではなくて、jsのファイルに変更されてブラウザ上で解釈される。
-
-
-## 5. Viteが行っているビルド動作
-viteが具体的に行っている動作は以下の通り。
-
-<!-- 📊 図版: ビルドの5工程。エントリから Resolve・Load・Transform を繰り返して依存グラフを作り、Optimize と Emit でグラフ全体を出力する流れ図 -->
-
-
-| 工程 | 内容 |
-| --- | --- |
-| ① Resolve | 依存グラフを解決 |
-| ② Load | グラフ上の全モジュールを読む |
-| ③ Transform | 全モジュールを変換 (ts, react, vue, ... -> js) |
-| ④ Optimize | tree shaking / minify / code splitting |
-| ⑤ Emit | `dist/` にハッシュ名で書く ＋ `index.html` に `<link>` 注入 |
-
-- dev は ①②③ を一部だけ実行して、④⑤ をまるごと飛ばす。
 
 
 ## 6. モジュールシステムの系譜と ESModule の仕様変遷
@@ -136,10 +119,117 @@ ESModule は2015年に完成したわけではなく、**その後もバージ�
 
 - **ESModule だけが「静的」** — `import` は必ずファイル先頭。`if` の中には書けない（動的に読みたいときは ES2020 の `import()` を使う）
 - そのため、バンドラは**コードを実行せずに**依存グラフを解析できる → tree shaking の前提
-- **ファイルの探し方（ローダー）は言語仕様に含まれない** → ブラウザ・Node・バンドラがそれぞれ決める（→ 23. bare specifier）
+- **ファイルの探し方（ローダー）は言語仕様に含まれない** → ブラウザ・Node・バンドラがそれぞれ決める（→ 10. bare specifier）
 
 
-## 7. ① Resolve — import 文を実ファイルに対応づける
+## 7. CommonJS による依存解決
+
+```
+const utils = require('./utils');
+module.exports = { foo };
+```
+
+- 依存を**書いた場所で宣言する**ので、並び順を人間が管理しなくてよくなった
+- モジュールごとにスコープが閉じるので、グローバルが汚れない
+- ただしこれは **Node.js のための仕様**。**ブラウザに `require` は存在しない**
+
+> ブラウザ環境でも CommonJS と同様の記法を実現する需要が、バンドラ登場の動機となった。
+
+## 8. バンドラの成り立ち
+
+browserify（2011） → **webpack（2012）**
+
+> バンドラは「まとめる道具」ではなく、  
+ブラウザに**無いモジュールシステム**を、  
+ビルド時に**自前で埋め込む**道具。
+
+「複数ファイルが1つになる」のは、この目的を達成した**結果**にすぎない。
+
+## 9. ESModule 標準化後もバンドラが必要な理由
+
+```
+import { foo } from './utils.js';
+export const bar = 1;
+```
+
+ES2015 で、言語仕様としてのモジュールが策定された。
+
+- パッケージ名を解決できない（**誰かが解決するしかない**）
+- リクエスト数が急増する
+- JS 以外を import できない
+- 最適化されない（tree shaking / minify / code splitting が行われない）
+
+ただし ESModule の登場で、**「開発中はバンドルしない」という選択肢**が生まれた。この前提は、Vite の開発サーバーの動作（パート2）と対応する。
+
+## 10. npm と bare specifier の解決
+
+```
+npm install
+  ├─ node_modules/       // パッケージの実体
+  ├─ package.json        // 何を使うかの宣言（main / exports / type）
+  └─ package-lock.json   // 固定バージョン
+```
+
+- パッケージの入口は `package.json` の `main` / `exports` で決まる
+- **ブラウザはこの探索をしない。**`'nanoid'` → 実ファイル、を誰かが解決するしかない
+- その「誰か」＝ バンドラ ／ Vite の事前バンドル。**ブラウザ単体では解決できない**
+
+npm / yarn / pnpm が並立する背景にも経緯がある。**yarn（2016）**は当時の npm の遅さと lockfile 不在への不満、 **pnpm** は `node_modules` の重複排除が動機である。
+
+## 11. トランスパイル（Babel）の役割の変遷
+
+```
+const add = (a, b) => a + b;
+// ↓ Babel が古いブラウザ向けに変換
+var add = function (a, b) { return a + b; };
+```
+
+- 新しい構文を使用しても IE11 では構文エラーになる → **ES2015→ES5 変換が必須の時代**
+- **IE のサポートが2022年に終了** → 「ES5 に落とす」設定は多くの現場で不要に
+- 今 transpile が残る主用途は **TypeScript → JS** と **JSX → JS**
+
+> transpile ＝ **構文**の変換。  
+polyfill ＝ 存在しない **API** を実装で埋める。別物である。
+
+## 12. 年表：ビルドツールの変遷
+
+| 年 | 出来事 | 効いたこと |
+|---|---|---|
+| 2009 | Node.js ＋ CommonJS | `require` の書き方が広まる |
+| 2010 | npm | パッケージ配布のインフラ |
+| 2011 | browserify / RequireJS | 「require をブラウザで」 |
+| 2012 | **webpack** | loader で CSS・画像もモジュール化 |
+| 2015 | **ES2015**：ESModule を言語仕様に ／ Babel 全盛 | `import` 誕生。ただし実装が追いつかず変換必須 |
+| 2017 | 主要ブラウザが ESModule を実装 | ネイティブで `import` が動く |
+| 2020 | **Vite** / esbuild が普及 | 「開発中はバンドルしない」 |
+| 2022 | IE 11 サポート終了 | ES5 へのダウンレベルがほぼ不要に |
+| 2023〜 | SWC / Oxc / Rolldown / Rspack | ツールの中身が JS → Rust / Go へ |
+
+> 各ツールは、既存の問題を解決するために積み上げられてきた。  
+そのため、設定項目には**解決したかった課題**が存在する。
+
+
+---
+
+## パート5 · ビルドの5工程
+
+Vite の build が行う動作は、以下の5工程に分けられる。
+
+<!-- 📊 図版: ビルドの5工程。エントリから Resolve・Load・Transform を繰り返して依存グラフを作り、Optimize と Emit でグラフ全体を出力する流れ図 -->
+
+
+| 工程 | 内容 |
+| --- | --- |
+| ① Resolve | 依存グラフを解決 |
+| ② Load | グラフ上の全モジュールを読む |
+| ③ Transform | 全モジュールを変換 (ts, react, vue, ... -> js) |
+| ④ Optimize | tree shaking / minify / code splitting |
+| ⑤ Emit | `dist/` にハッシュ名で書く ＋ `index.html` に `<link>` 注入 |
+
+- dev は ①②③ を一部だけ実行して、④⑤ をまるごと飛ばす。
+
+
+## 13. ① Resolve — import 文を実ファイルに対応づける
 
 `import` に書かれた**文字列（specifier）**を、ディスク上の**実ファイルのパス**に変換する工程。
 
@@ -156,9 +246,9 @@ import { nanoid }       from 'nanoid';        // bare specifier
 実際に `nanoid` を解決すると、`package.json` の `exports["."].browser` が選ばれ `node_modules/nanoid/index.browser.js` に対応づけられる（同じ `'nanoid'` でも Node 向けなら `index.js`）。
 
 - 解決したファイルを ②③ してまた `import` を見つけ、**①②③ を再帰的に繰り返す**ことで依存グラフができる
-- **ブラウザはこの探索をしない**（→ 23）ので、誰かが肩代わりするしかない
+- **ブラウザはこの探索をしない**（→ 10）ので、誰かが肩代わりするしかない
 
-## 8. ② Load — モジュールの中身を取り出す
+## 14. ② Load — モジュールの中身を取り出す
 
 ①で決まったパスから、**中身を文字列（またはバイナリ）として読む**工程。
 
@@ -173,7 +263,7 @@ import { nanoid }       from 'nanoid';        // bare specifier
 - この時点では CSS も画像も**ただの中身**。まだ JS ではない
 - 「どこから読むか」を差し替えられるので、**存在しないファイルを import させる**ことができる
 
-## 9. ③ Transform — すべてを JS モジュールに変換する
+## 15. ③ Transform — すべてを JS モジュールに変換する
 
 ②で読んだ中身を、**JS（ESModule）として成立する形**に書き換える工程。
 
@@ -188,11 +278,11 @@ import { nanoid }       from 'nanoid';        // bare specifier
 import './style.css';   // ← これが成立するのは、CSS が③で JS にされるから
 ```
 
-- **ファイルの数は変わらない**（数を減らすのは④の bundle → 28）
+- **ファイルの数は変わらない**（数を減らすのは④の bundle → 18）
 - 型チェックは**行われない**。TS の型エラーはビルドを止めないので `tsc --noEmit` を別に回す
 - **Vite の dev サーバーが実行するのはここまで**。しかもリクエストが来たモジュールだけを変換する
 
-## 10. ④ Optimize — グラフ全体をまとめて最適化する
+## 16. ④ Optimize — グラフ全体をまとめて最適化する
 
 ①〜③で**全モジュールが揃って初めて**できる処理。内訳は4つ。
 
@@ -206,7 +296,7 @@ import './style.css';   // ← これが成立するのは、CSS が③で JS �
 - tree shaking の判断材料は `package.json` の **`sideEffects`** と **`/*#__PURE__*/`**（`nanoid` は `"sideEffects": false` を宣言している）
 - **グラフ全体が前提**なので、1モジュールずつ処理する dev では原理的に実行できない ← dev と build が別実装になる理由
 
-## 11. ⑤ Emit — `dist/` に書き出す
+## 17. ⑤ Emit — `dist/` に書き出す
 
 ④で確定したチャンクを、**配信できる形のファイル群**として書き出す工程。
 
@@ -231,96 +321,7 @@ dist/
 
 > ここまでが `npm run build`。以降は生成された静的ファイルを配信するだけで、実行時にビルドツールは関与しない。
 
-## 20. CommonJS による依存解決
-
-```
-const utils = require('./utils');
-module.exports = { foo };
-```
-
-- 依存を**書いた場所で宣言する**ので、並び順を人間が管理しなくてよくなった
-- モジュールごとにスコープが閉じるので、グローバルが汚れない
-- ただしこれは **Node.js のための仕様**。**ブラウザに `require` は存在しない**
-
-> ブラウザ環境でも CommonJS と同様の記法を実現する需要が、バンドラ登場の動機となった。
-
-## 21. バンドラの成り立ち
-
-browserify（2011） → **webpack（2012）**
-
-> バンドラは「まとめる道具」ではなく、  
-ブラウザに**無いモジュールシステム**を、  
-ビルド時に**自前で埋め込む**道具。
-
-「複数ファイルが1つになる」のは、この目的を達成した**結果**にすぎない。
-
-## 22. ESModule 標準化後もバンドラが必要な理由
-
-```
-import { foo } from './utils.js';
-export const bar = 1;
-```
-
-ES2015 で、言語仕様としてのモジュールが策定された。
-
-- パッケージ名を解決できない（**誰かが解決するしかない**）
-- リクエスト数が急増する
-- JS 以外を import できない
-- 最適化されない（tree shaking / minify / code splitting が行われない）
-
-ただし ESModule の登場で、**「開発中はバンドルしない」という選択肢**が生まれた。この前提は、Vite の開発サーバーの動作（パート2）と対応する。
-
-## 23. npm と bare specifier の解決
-
-```
-npm install
-  ├─ node_modules/       // パッケージの実体
-  ├─ package.json        // 何を使うかの宣言（main / exports / type）
-  └─ package-lock.json   // 固定バージョン
-```
-
-- パッケージの入口は `package.json` の `main` / `exports` で決まる
-- **ブラウザはこの探索をしない。**`'nanoid'` → 実ファイル、を誰かが解決するしかない
-- その「誰か」＝ バンドラ ／ Vite の事前バンドル。**ブラウザ単体では解決できない**
-
-npm / yarn / pnpm が並立する背景にも経緯がある。**yarn（2016）**は当時の npm の遅さと lockfile 不在への不満、 **pnpm** は `node_modules` の重複排除が動機である。
-
-## 24. トランスパイル（Babel）の役割の変遷
-
-```
-const add = (a, b) => a + b;
-// ↓ Babel が古いブラウザ向けに変換
-var add = function (a, b) { return a + b; };
-```
-
-- 新しい構文を使用しても IE11 では構文エラーになる → **ES2015→ES5 変換が必須の時代**
-- **IE のサポートが2022年に終了** → 「ES5 に落とす」設定は多くの現場で不要に
-- 今 transpile が残る主用途は **TypeScript → JS** と **JSX → JS**
-
-> transpile ＝ **構文**の変換。  
-polyfill ＝ 存在しない **API** を実装で埋める。別物である。
-
-## 25. 年表：ビルドツールの変遷
-
-| 年 | 出来事 | 効いたこと |
-|---|---|---|
-| 2009 | Node.js ＋ CommonJS | `require` の書き方が広まる |
-| 2010 | npm | パッケージ配布のインフラ |
-| 2011 | browserify / RequireJS | 「require をブラウザで」 |
-| 2012 | **webpack** | loader で CSS・画像もモジュール化 |
-| 2015 | **ES2015**：ESModule を言語仕様に ／ Babel 全盛 | `import` 誕生。ただし実装が追いつかず変換必須 |
-| 2017 | 主要ブラウザが ESModule を実装 | ネイティブで `import` が動く |
-| 2020 | **Vite** / esbuild が普及 | 「開発中はバンドルしない」 |
-| 2022 | IE 11 サポート終了 | ES5 へのダウンレベルがほぼ不要に |
-| 2023〜 | SWC / Oxc / Rolldown / Rspack | ツールの中身が JS → Rust / Go へ |
-
-> 各ツールは、既存の問題を解決するために積み上げられてきた。  
-そのため、設定項目には**解決したかった課題**が存在する。
-
-
-## パート5 · ビルドの5工程
-
-## 28. 用語の整理：transpile / bundle / minify ほか
+## 18. 用語の整理：transpile / bundle / minify ほか
 
 - **transpile（変換）**（工程 ③） — 構文を別の構文に書き換える。TS→JS、ES2022→ES2015。 **ファイルの数は変わらない。**
 - **bundle（結合）**（工程 ①②） — 依存を辿って複数ファイルを束ねる。 **ファイルの数が減る。**
@@ -338,7 +339,7 @@ esbuild の設定で `bundle: false` にすると、`import` 文が **そのま�
 
 ## パート6 · ツールの内部構造
 
-## 29. webpack の出力①：モジュールの登録
+## 19. webpack の出力①：モジュールの登録
 
 ```
 // dist/main.js の冒頭（development ビルド＝minify なし）
@@ -354,7 +355,7 @@ var __webpack_modules__ = ({
 - **各モジュールが「関数」に包まれ、パスをキーにしたオブジェクトに登録されている**
 - 関数の中なので、変数はグローバルに漏れない → **script タグ時代の「問題2」の解決**
 
-## 30. webpack の出力②：__webpack_require__
+## 20. webpack の出力②：__webpack_require__
 
 ```
 function __webpack_require__(moduleId) {
@@ -374,14 +375,14 @@ function __webpack_require__(moduleId) {
 > この関数は、Node の `require` を  
 ブラウザ向けに再実装したものである。
 
-## 31. バンドラの役割：モジュールシステムの埋め込み
+## 21. バンドラの役割：モジュールシステムの埋め込み
 
 - webpack は **2012年生まれ**。当時のブラウザには ESModule が無かったため、モジュールシステムをブラウザ向けに実装する必要があった
 - esbuild や Vite の出力（ESModule形式）には、この関数は**存在しない**
 - ブラウザが ESModule を理解するようになったことで、**ランタイムを埋め込む必要がなくなった**
 - webpack 5 でも `output.module: true` により ESModule 出力が可能である
 
-## 32. loader / plugin という仕組み
+## 22. loader / plugin という仕組み
 
 ```
 use: [ MiniCssExtractPlugin.loader, 'css-loader' ]
@@ -394,7 +395,7 @@ use: [ MiniCssExtractPlugin.loader, 'css-loader' ]
 webpack の設計では、あらゆる依存が JS モジュールとして扱われる。loader は JS 以外のファイルを JS に変換する仕組みである。  
 `import './style.css'` という記述は、この設計に基づくものである。
 
-## 33. Rollup コアの4フェーズ
+## 23. Rollup コアの4フェーズ
 
 | フェーズ | 中身 |
 |---|---|
@@ -408,7 +409,7 @@ webpack の設計では、あらゆる依存が JS モジュールとして扱�
 
 以上より、Vite 7 の `vite build` は **Rollup コア ＋ Vite 内蔵プラグイン ＋ esbuild ＋ node-resolve** の組み合わせで構成される。
 
-## 34. JS 製ツールの Rust / Go 製への置き換え
+## 24. JS 製ツールの Rust / Go 製への置き換え
 
 | これまで（JS製） | 置き換え先 | 言語 | ひとこと |
 |---|---|---|---|
@@ -421,7 +422,7 @@ webpack の設計では、あらゆる依存が JS モジュールとして扱�
 重要な点は、**概念自体は変化していない**ことである。  
 5工程も、loader / plugin という抽象も、そのまま通用する。
 
-## 35. Rolldown の構成：コア再実装 ＋ 変換・解決の統合
+## 25. Rolldown の構成：コア再実装 ＋ 変換・解決の統合
 
 | Rollup コアの部品 | Rolldown |
 |---|---|
@@ -439,7 +440,7 @@ webpack の設計では、あらゆる依存が JS モジュールとして扱�
 
 ## パート7 · まとめ
 
-## 36. 5工程で見る Vite 7 → 8 の変更範囲
+## 26. 5工程で見る Vite 7 → 8 の変更範囲
 
 | 工程 | Vite 7 → 8 での変化 |
 |---|---|
@@ -454,7 +455,7 @@ webpack の設計では、あらゆる依存が JS モジュールとして扱�
 
 変わったのは各工程を実行するエンジンであり、工程そのものではない。
 
-## 37. 要点の再確認
+## 27. 要点の再確認
 
 1. **Vite 7 → 8 の主な変更は、内部エンジンの JS 製 → Rust 製への置き換え** — 開発時の事前バンドルと変換（esbuild → Rolldown / Oxc）、本番のバンドル（Rollup → Rolldown）、CSS 処理（esbuild → lightningcss）。開発サーバーの動作モデルと設定構造は変わらない。
 2. **エンジンは変わったが、ビルドの5工程という骨格は変わらない** — Resolve / Load / Transform / Optimize / Emit。「同じ処理を、より速い実装で行う」という位置づけ。
@@ -536,7 +537,7 @@ define: { __APP_VERSION__: JSON.stringify('1.0.0') },  // ソース中の識別�
 
 - JSX などの変換オプションは Vite 7 では `esbuild`、Vite 8 では `oxc` で指定する
 
-**webpack** — 拡張子ごとに loader を明示する（配列は**末尾から先頭へ**適用 → 32）
+**webpack** — 拡張子ごとに loader を明示する（配列は**末尾から先頭へ**適用 → 22）
 
 ```
 module: {
