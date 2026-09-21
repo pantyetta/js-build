@@ -1,0 +1,23 @@
+<!-- 生成ファイル（04-bench/generate-vue.mjs）。手で編集しない。 -->
+<!-- lib/index.js（バレル）から named import。computed で合成して表示するだけの葉コンポーネント。 -->
+<script setup>
+import { computed } from 'vue';
+import { calcu01228A, calcu00140B, calcu00350B, calcu00896B, calcu01137B } from '../lib/index.js';
+
+const seed = 12;
+const total = computed(() => calcu01228A(seed) - calcu00140B(seed) + calcu00350B(seed) - calcu00896B(seed) + calcu01137B(seed));
+</script>
+
+<template>
+  <div class="blk">comp01602: {{ total }}</div>
+</template>
+
+<style scoped>
+.blk {
+  color: hsl(242 70% 40%);
+  padding: 0.25rem;
+  margin: 0.1rem;
+  border: 1px solid hsl(62 50% 50%);
+  display: inline-block;
+}
+</style>

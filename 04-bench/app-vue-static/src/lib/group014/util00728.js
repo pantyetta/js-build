@@ -1,0 +1,17 @@
+// 生成ファイル（04-bench/generate-vue.mjs）。手で編集しない。
+// variant 5 — import なしの葉モジュール（Vue 非依存）。
+
+const REu00728 = /^[a-z]+6$/;
+
+export async function calcu00728A(x) {
+  const y = await Promise.resolve(x * 14);
+  return y + 26;
+}
+
+export function calcu00728B(x, opts) {
+  const extra = opts?.extra ?? 14;
+  const merged = [...[x, extra], 25];
+  return REu00728.test("leaf") ? merged.length + x : merged.length - x;
+}
+
+export const Ku00728 = 359;

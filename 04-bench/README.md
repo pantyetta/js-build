@@ -148,6 +148,97 @@ Vite プラグイン層のマップと合成 → `@jridgewell/sourcemap-codec` �
 ただしこれは非現実的な設定ではなく、実務で普通に使う値でもある。
 `sourcemap: false` での追試は今後の TODO。
 
+## Vue 版（コード分割なし）— SFC コンパイルのオーバーヘッドを測る
+
+上のプレーン JS の実測は「素の JS を Rollup / Rolldown が束ねるだけ」の場合の話。
+実務でよくあるのは Vue や React の SFC / JSX で、この場合バンドラ本体の前に
+**フレームワーク側のコンパイラ**（Vue なら `@vitejs/plugin-vue` の template → render 関数変換、
+scoped CSS の書き換え）が挟まる。ここが 7→8 でどう変わるかはプレーン JS の実測だけでは分からない。
+
+`generate-vue.mjs` は `generate.mjs` と同じ考え方で、**コード分割なし・静的 import のみ・
+単一バンドル**の Vue 3 プロジェクトを `app-vue-static/` に生成する（動的 import 版は作っていない）。
+
+```
+04-bench/
+  generate-vue.mjs      app-vue-static/ を決定論的に生成するスクリプト
+  app-vue-static/        コードの実体（node で生成するまで存在しない）
+    index.html
+    src/
+      lib/               葉モジュール。プレーン JS のまま（Vue 非依存の純関数）
+      components/*.vue   <script setup> + <template> + <style scoped> の葉コンポーネント
+      pages/*.vue         40 ページ分。担当コンポーネントを静的 import してテンプレートに並べる
+      App.vue             40 ページを全部静的 import。ボタンで表示切り替え（import() は使わない）
+      main.js / style.css
+  vite7-vue-static/      vite 7.3.6 + @vitejs/plugin-vue 6.0.9。index.html と src は
+                          ../app-vue-static への symlink（要生成・要手動作成）
+  vite8-vue-static/      vite 8.3.0 + @vitejs/plugin-vue 6.0.9。同上
+```
+
+`lib/` の葉モジュールはプレーン JS 版と同じ生成ロジック（Vue と無関係の純関数）。
+違うのは `components/` と `pages/` が `.js` ではなく `.vue` になっている点、CSS を
+外部ファイルに切り出さず**コンポーネントごとの `<style scoped>` に埋め込んでいる**点
+（scoped CSS の書き換えコストも計測対象に含めたいので、プレーン JS 版のように
+「CSS の影響を 2% 未満に抑える」設計にはしていない — Vue アプリの実態に近づける方を優先した）。
+
+### 【注意】このセッションでは生成・計測を実行していない
+
+このスクリプトはコードとして書いただけで、実際に `node` で走らせてビルド時間を測るところまでは
+やっていない（作業環境に node/npm がなかったため）。したがって：
+
+- `app-vue-static/` はまだ存在しない（下のセットアップ手順で生成する）
+- `--modules` の既定値 `1200` は未検証の当て推量（SFC は 1 ファイルあたりプレーン JS より
+  コンパイルが重いので、`generate.mjs` の `N=3750` をそのまま使うと Vite 7 が 30s を
+  大きく超える可能性が高いと考えて、ざっくり 1/3 にしてあるだけ）
+- 下の「実測結果」は空欄。実際に計測した数字が出たら、この README と
+  [SLIDES-vite7to8.md](../SLIDES-vite7to8.md) の該当箇所を実測値で埋めること
+
+### セットアップ（WSL / macOS / Linux ネイティブで実行。9p 越しだと数字が壊れるのは上と同じ）
+
+```sh
+# 1. Vue 版のソースを生成（既定 --modules 1200。app/ app-static/ と同じく決定論的）
+node 04-bench/generate-vue.mjs
+
+# 2. symlink を作る（vite7/ vite7-static/ などと同じ方式）
+cd 04-bench
+ln -sf ../app-vue-static/index.html vite7-vue-static/index.html
+ln -sf ../app-vue-static/src        vite7-vue-static/src
+ln -sf ../app-vue-static/index.html vite8-vue-static/index.html
+ln -sf ../app-vue-static/src        vite8-vue-static/src
+
+# 3. 依存インストール
+for d in vite7-vue-static vite8-vue-static; do
+  (cd $d && npm install)
+done
+
+# 4. まず vite7-vue-static でビルドしてみて、~30s から大きくずれていたら
+#    --modules を上下させて generate-vue.mjs を再生成 → 1〜3 をやり直す
+cd vite7-vue-static && rm -rf dist node_modules/.vite && npm run build
+```
+
+30s 前後に合わせられたら、プレーン JS 版と同じ手順（3 回ビルドして中央値、初回はキャッシュ /
+JIT ウォームアップの影響を受けるので捨てる）で `vite8-vue-static` も計測し、下の表を埋める。
+
+### 実測結果（未計測 — キャリブレーション待ち）
+
+| | Vite 7.3.6（Rollup + @vitejs/plugin-vue） | Vite 8.3.0（Rolldown + @vitejs/plugin-vue） | 倍率 |
+|---|---|---|---|
+| ビルド時間（3 回中央値） | — | — | — |
+| modules transformed | — | — | |
+| チャンク数 | — | — | |
+| dist サイズ | — | — | |
+
+計測条件（埋める側）: `--modules` の最終値 / マシンスペック / OS・FS / Node バージョン。
+
+### この版で新しく混入する差分（プレーン JS 版の「揃えられない差分」に追加で）
+
+- **`@vitejs/plugin-vue` 自体は 7/8 共通のバージョン（6.0.9）を使うので、プラグイン側の
+  実装差は無い**。差が出るとしたら、プラグインが内部で使う CSS 変換（v7 は esbuild、
+  v8 は lightningcss。→ [SLIDES-vite7to8.md](../SLIDES-vite7to8.md) 3-1）と、
+  バンドラ本体（Rollup / Rolldown）が SFC コンパイル後の JS/CSS をどう束ねるか、の 2 点
+- 1 つの `.vue` ファイルは内部で script / template / style の複数の仮想モジュールに
+  分解されるため、`modules transformed` の数はプレーン JS 版と単純比較できない
+  （component 1 個 = 1 モジュールではない）
+
 ## 既知の制約
 
 - symlink を使っているので、Windows 上で symlink サポートを有効にせず clone すると壊れる
@@ -163,6 +254,8 @@ cd ~/bench/vite7         && npm run preview   # http://localhost:5373/
 cd ~/bench/vite8         && npm run preview   # http://localhost:5473/
 cd ~/bench/vite7-static  && npm run preview   # http://localhost:5374/
 cd ~/bench/vite8-static  && npm run preview   # http://localhost:5474/
+cd ~/bench/vite7-vue-static && npm run preview   # http://localhost:5375/（要セットアップ、上のVue版参照）
+cd ~/bench/vite8-vue-static && npm run preview   # http://localhost:5475/（要セットアップ、上のVue版参照）
 ```
 
 ページのボタンを押すと（動的 import 版なら import で遅延ロードしてから、静的版なら即座に）

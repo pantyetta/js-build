@@ -1,0 +1,17 @@
+{
+  "name": "bench-vite7-vue-static",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "NODE_OPTIONS=--max-old-space-size=8192 vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "vue": "3.5.43"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "6.0.9",
+    "vite": "7.3.6"
+  }
+}
