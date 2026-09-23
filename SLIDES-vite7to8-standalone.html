@@ -4,346 +4,171 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<title>Vite 7 → 8 ― 改めて JS のビルドを学ぶ</title>
+<title>Vite 8 で学ぶ JavaScript のビルド</title>
 <style>
-  /* 最小リセット（Artifact 側が入れてくれていた分をローカル用に自前で持つ） */
-  html { -webkit-text-size-adjust: 100%; }
-  body, h1, h2, h3, p, figure, pre, ul, ol { margin: 0; }
-  ul, ol { padding: 0; }
-  img, svg { display: block; max-width: 100%; }
-  button { font: inherit; color: inherit; }
-</style>
-<style>
-  /* ── 設計トークン ────────────────────────────────────────────
-     ブループリント（技術図面）の語彙。淡い青灰の紙 × 濃紺のインク、
-     ハーフラインの罫、そして「今ここを見て」の一点だけ焼けた橙。 */
   :root {
-    --paper:      #EEF1F5;
-    --surface:    #FAFBFC;
-    --surface-2:  #E3E8EF;
+    --backdrop:   #D5DCE5;
+    --paper:      #FFFFFF;
+    --surface-2:  #EEF1F5;
     --ink:        #16202E;
     --ink-soft:   #4A5B70;
     --ink-faint:  #8494A6;
     --rule:       #C4CFDC;
-    --rule-soft:  #D8E0E9;
+    --rule-soft:  #DDE3EA;
     --accent:     #C2531F;
-    --accent-ink: #FFFFFF;
     --schema:     #2C6A97;
-    --code-bg:    #E7ECF2;
+    --code-bg:    #F1F4F8;
     --hl-bg:      rgba(194, 83, 31, 0.13);
-
-    --font-display: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic Medium",
-                    "Noto Sans JP", system-ui, sans-serif;
-    --font-body:    "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic Medium",
-                    "Noto Sans JP", system-ui, sans-serif;
-    --font-mono:    ui-monospace, "SF Mono", SFMono-Regular, Menlo, "Cascadia Mono",
-                    "Noto Sans Mono", "Courier New", monospace;
-
-    --pad: clamp(1.5rem, 4vw, 4.5rem);
+    --v7:         #1F6FAE;
+    --v8:         #C2531F;
+    --surface:    #FFFFFF;
+    --font-body:  "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic Medium", "Noto Sans JP", system-ui, sans-serif;
+    --font-mono:  ui-monospace, "SF Mono", SFMono-Regular, Menlo, "Cascadia Mono", "Noto Sans Mono", "Courier New", monospace;
   }
-
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
-      --paper:     #0E151F;
-      --surface:   #16202E;
-      --surface-2: #1E2A3A;
+      --backdrop:  #070B11;
+      --paper:     #111925;
+      --surface-2: #1B2635;
       --ink:       #DEE6F0;
       --ink-soft:  #9FB0C4;
       --ink-faint: #6B7C90;
       --rule:      #2C3B4F;
       --rule-soft: #223044;
       --accent:    #EE8B54;
-      --accent-ink:#16202E;
       --schema:    #74AAD4;
-      --code-bg:   #101A26;
-      --hl-bg:     rgba(238, 139, 84, 0.14);
+      --code-bg:   #0C131C;
+      --hl-bg:     rgba(238, 139, 84, 0.16);
+      --v7:        #3F8FD6;
+      --v8:        #D86A33;
+      --surface:   #16202E;
     }
   }
-
   :root[data-theme="dark"] {
-    --paper:     #0E151F;
-    --surface:   #16202E;
-    --surface-2: #1E2A3A;
+    --backdrop:  #070B11;
+    --paper:     #111925;
+    --surface-2: #1B2635;
     --ink:       #DEE6F0;
     --ink-soft:  #9FB0C4;
     --ink-faint: #6B7C90;
     --rule:      #2C3B4F;
     --rule-soft: #223044;
     --accent:    #EE8B54;
-    --accent-ink:#16202E;
     --schema:    #74AAD4;
-    --code-bg:   #101A26;
-    --hl-bg:     rgba(238, 139, 84, 0.14);
+    --code-bg:   #0C131C;
+    --hl-bg:     rgba(238, 139, 84, 0.16);
+    --v7:        #3F8FD6;
+    --v8:        #D86A33;
+    --surface:   #16202E;
   }
 
   * { box-sizing: border-box; }
-
+  html, body { margin: 0; height: 100%; }
   body {
-    margin: 0;
-    background: var(--paper);
+    background: var(--backdrop);
     color: var(--ink);
     font-family: var(--font-body);
-    font-size: clamp(15px, 1.15vw, 19px);
-    line-height: 1.7;
     -webkit-font-smoothing: antialiased;
-  }
-
-  /* ── デッキの外枠 ─────────────────────────────────────────── */
-  .deck {
-    height: 100dvh;
-    display: flex;
-    flex-direction: column;
-  }
-
-  .topbar {
-    flex: 0 0 auto;
-    display: flex;
-    align-items: baseline;
-    gap: 1rem;
-    padding: 0.7rem var(--pad) 0.6rem;
-    border-bottom: 1px solid var(--rule);
-    font-family: var(--font-mono);
-    font-size: 0.72rem;
-    letter-spacing: 0.06em;
-    color: var(--ink-faint);
-  }
-  .topbar .sec { color: var(--schema); }
-  .topbar .time {
-    padding: 0.1em 0.5em;
-    border: 1px solid var(--rule);
-    border-radius: 2px;
-  }
-  .topbar .spacer { flex: 1; }
-  .topbar .count { font-variant-numeric: tabular-nums; }
-
-  .progress {
-    flex: 0 0 auto;
-    height: 2px;
-    background: var(--rule-soft);
-  }
-  .progress > i {
-    display: block;
-    height: 100%;
-    width: 0;
-    background: var(--accent);
-    transition: width 220ms ease;
-  }
-
-  .stage {
-    flex: 1 1 auto;
-    position: relative;
     overflow: hidden;
   }
 
+  /* ── 16:9 のスライド枠（PowerPoint と同じ比率で拡大縮小） ── */
+  .stage { position: fixed; inset: 0; display: grid; place-items: center; }
   .slide {
-    position: absolute;
-    inset: 0;
     display: none;
-    flex-direction: column;
-    gap: 1.1rem;
-    padding: clamp(1.2rem, 3.2vh, 2.6rem) var(--pad);
-    overflow-y: auto;
-  }
-  .slide.active { display: flex; }
-
-  @media (prefers-reduced-motion: no-preference) {
-    .slide.active > * { animation: rise 320ms cubic-bezier(.2,.7,.3,1) backwards; }
-    .slide.active > *:nth-child(2) { animation-delay: 40ms; }
-    .slide.active > *:nth-child(3) { animation-delay: 80ms; }
-    .slide.active > *:nth-child(4) { animation-delay: 120ms; }
-    @keyframes rise { from { opacity: 0; transform: translateY(7px); } }
-  }
-
-  /* ── タイポグラフィ ───────────────────────────────────────── */
-  .eyebrow {
-    font-family: var(--font-mono);
-    font-size: 0.72rem;
-    letter-spacing: 0.15em;
-    color: var(--schema);
-    text-transform: uppercase;
-  }
-
-  .slide h1 {
-    font-family: var(--font-display);
-    font-weight: 800;
-    font-size: clamp(2rem, 4.6vw, 3.6rem);
-    line-height: 1.18;
-    letter-spacing: -0.02em;
-    text-wrap: balance;
-    margin: 0;
-  }
-  .slide h2 {
-    font-family: var(--font-display);
-    font-weight: 800;
-    font-size: clamp(1.35rem, 2.9vw, 2.3rem);
-    line-height: 1.28;
-    letter-spacing: -0.015em;
-    text-wrap: balance;
-    margin: 0;
-  }
-  .slide h2 .q { color: var(--accent); }
-
-  .lead {
-    font-size: clamp(1rem, 1.45vw, 1.28rem);
-    color: var(--ink-soft);
-    max-width: 62ch;
-    margin: 0;
-    text-wrap: pretty;
-  }
-  .slide p { margin: 0; max-width: 68ch; }
-  .em { color: var(--accent); font-weight: 700; }
-  .schema-em { color: var(--schema); font-weight: 700; }
-
-  /* ── リスト ──────────────────────────────────────────────── */
-  ul.points {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.85rem;
-    max-width: 72ch;
-  }
-  ul.points > li {
     position: relative;
-    padding-left: 1.6rem;
-    text-wrap: pretty;
+    width: min(100vw, calc(100vh * 16 / 9));
+    aspect-ratio: 16 / 9;
+    background: var(--paper);
+    container-type: size;
+    overflow: hidden;
   }
-  ul.points > li::before {
-    content: "";
+  .slide.active { display: block; }
+
+  /* タイトル領域（上） */
+  .slide > .title {
     position: absolute;
-    left: 0;
-    top: 0.72em;
-    width: 0.7rem;
-    height: 1px;
-    background: var(--rule);
-  }
-  ul.points > li.key::before { background: var(--accent); height: 2px; top: 0.68em; }
-
-  ol.steps {
-    list-style: none;
-    counter-reset: s;
+    left: 5cqw; right: 5cqw; top: 4cqh; height: 13cqh;
+    display: flex; align-items: flex-end;
     margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.8rem;
-    max-width: 72ch;
-  }
-  ol.steps > li {
-    counter-increment: s;
-    display: grid;
-    grid-template-columns: 1.9rem 1fr;
-    gap: 0.8rem;
-    align-items: baseline;
-  }
-  ol.steps > li::before {
-    content: counter(s, decimal-leading-zero);
-    font-family: var(--font-mono);
-    font-size: 0.78rem;
-    color: var(--accent);
-    font-variant-numeric: tabular-nums;
-  }
-
-  /* ── カード / 比較 ────────────────────────────────────────── */
-  .cards {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
-    gap: 1rem;
-  }
-  .card {
-    background: var(--surface);
-    border: 1px solid var(--rule);
-    border-radius: 3px;
-    padding: 1rem 1.1rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.45rem;
-  }
-  .card.mark { border-color: var(--accent); }
-  .card h3 {
-    margin: 0;
-    font-size: 0.95rem;
-    font-weight: 700;
+    font-size: 3.1cqw;
+    font-weight: 800;
+    line-height: 1.25;
     letter-spacing: -0.01em;
   }
-  .card p { font-size: 0.92rem; color: var(--ink-soft); }
-  .card .tag {
-    font-family: var(--font-mono);
-    font-size: 0.68rem;
-    letter-spacing: 0.1em;
-    color: var(--ink-faint);
+  /* 本文領域（下） */
+  .slide > .body {
+    position: absolute;
+    left: 5cqw; right: 5cqw; top: 21cqh; bottom: 8cqh;
+    display: flex; flex-direction: column; gap: 2.4cqh;
+    font-size: 1.75cqw;
+    line-height: 1.6;
+  }
+  .pageno {
+    position: absolute; right: 3cqw; bottom: 2.6cqh;
+    font-size: 1cqw; color: var(--ink-faint); font-variant-numeric: tabular-nums;
   }
 
-  /* ── コード ──────────────────────────────────────────────── */
+  /* 表紙 */
+  .slide.cover > .title {
+    top: 30cqh; height: auto; bottom: 50cqh;
+    justify-content: center; text-align: center;
+    font-size: 4.4cqw;
+  }
+  .slide.cover > .body {
+    top: 54cqh; bottom: 16cqh;
+    align-items: center; text-align: center;
+    font-size: 1.9cqw; color: var(--ink-soft);
+  }
+
+  .slide p { margin: 0; }
+  .em { color: var(--accent); font-weight: 700; }
+  .muted { color: var(--ink-soft); }
+  .small { font-size: 0.8em; color: var(--ink-soft); }
+  .strong { font-weight: 700; }
+
+  /* 箇条書き */
+  .slide ul, .slide ol { margin: 0; padding-left: 1.4em; display: flex; flex-direction: column; gap: 1.2cqh; }
+  .slide ul ul { margin-top: 0.8cqh; font-size: 0.9em; color: var(--ink-soft); list-style: circle; }
+  .slide li::marker { color: var(--ink-faint); }
+  .slide li .sub { display: block; margin-top: 0.4cqh; font-size: 0.9em; color: var(--ink-soft); }
+  .slide ol > li::marker { color: var(--accent); font-weight: 700; }
+
+  /* 表 */
+  table { border-collapse: collapse; width: 100%; font-size: 0.86em; }
+  th, td { text-align: left; padding: 0.9cqh 1.2cqw 0.9cqh 0; border-bottom: 1px solid var(--rule-soft); vertical-align: top; }
+  thead th { font-size: 0.85em; color: var(--ink-soft); border-bottom: 1.5px solid var(--rule); font-weight: 700; }
+  td.mono { font-family: var(--font-mono); font-size: 0.92em; }
+
+  /* コード */
   .code {
+    margin: 0;
     background: var(--code-bg);
     border: 1px solid var(--rule-soft);
-    border-left: 2px solid var(--schema);
-    border-radius: 2px;
+    border-radius: 3px;
     font-family: var(--font-mono);
-    font-size: clamp(0.72rem, 1.02vw, 0.95rem);
-    line-height: 1.75;
-    padding: 0.9rem 1.1rem;
-    margin: 0;
-    overflow-x: auto;
-    tab-size: 2;
+    font-size: 0.82em;
+    line-height: 1.7;
+    padding: 1.6cqh 1.6cqw;
+    white-space: pre;
   }
-  .code.bad { border-left-color: var(--accent); }
   .code .c { color: var(--ink-faint); }
   .code .k { color: var(--schema); }
   .code .a { color: var(--accent); font-weight: 700; }
-  .code .hl {
-    display: inline-block;
-    width: 100%;
-    background: var(--hl-bg);
-  }
+  .code .hl { background: var(--hl-bg); }
   code.inline {
-    font-family: var(--font-mono);
-    font-size: 0.88em;
-    background: var(--code-bg);
-    border: 1px solid var(--rule-soft);
-    border-radius: 2px;
-    padding: 0.08em 0.36em;
+    font-family: var(--font-mono); font-size: 0.9em;
+    background: var(--code-bg); border: 1px solid var(--rule-soft); border-radius: 2px;
+    padding: 0.05em 0.3em;
+    white-space: nowrap;
   }
 
-  /* ── 表 ──────────────────────────────────────────────────── */
-  .tablewrap { overflow-x: auto; }
-  table {
-    border-collapse: collapse;
-    width: 100%;
-    font-size: 0.9rem;
-  }
-  th, td {
-    text-align: left;
-    padding: 0.55rem 0.9rem 0.55rem 0;
-    border-bottom: 1px solid var(--rule-soft);
-    vertical-align: top;
-  }
-  thead th {
-    font-family: var(--font-mono);
-    font-size: 0.68rem;
-    letter-spacing: 0.11em;
-    color: var(--ink-faint);
-    text-transform: uppercase;
-    border-bottom-color: var(--rule);
-  }
-  td.mono { font-family: var(--font-mono); font-size: 0.85rem; }
-
-  /* ── 図 ──────────────────────────────────────────────────── */
-  figure { margin: 0; display: flex; flex-direction: column; gap: 0.6rem; }
-  figure svg { width: 100%; max-width: 100%; height: auto; color: var(--ink); }
-  figcaption {
-    font-size: 0.85rem;
-    color: var(--ink-soft);
-    max-width: 74ch;
-    text-wrap: pretty;
-  }
-  .figscroll { overflow-x: auto; }
-
+  /* 図 */
+  .fig { flex: 1 1 auto; min-height: 0; display: flex; }
+  .fig svg { width: 100%; height: 100%; color: var(--ink); }
   .svg-box   { fill: var(--surface); stroke: var(--rule); stroke-width: 1.25; }
   .svg-box-2 { fill: var(--surface-2); stroke: var(--rule); stroke-width: 1.25; }
-  .svg-mark  { fill: none; stroke: var(--accent); stroke-width: 1.75; }
+  .svg-mark  { fill: var(--surface); stroke: var(--accent); stroke-width: 1.75; }
   .svg-line  { stroke: var(--ink-soft); stroke-width: 1.25; fill: none; }
   .svg-line-a{ stroke: var(--accent); stroke-width: 2.25; fill: none; }
   .svg-line-d{ stroke: var(--ink-faint); stroke-width: 1.1; fill: none; stroke-dasharray: 4 4; }
@@ -356,654 +181,235 @@
   .svg-fill-a{ fill: var(--accent); }
   .svg-fill-s{ fill: var(--schema); }
   .svg-rule  { stroke: var(--rule); stroke-width: 1; }
+  .svg-v7 { fill: var(--v7); }
+  .svg-v8 { fill: var(--v8); }
+  .bar:hover { opacity: 0.8; }
 
-  /* ── 引き ──────────────────────────────────────────────── */
-  .pull {
-    border-left: 2px solid var(--accent);
-    padding: 0.2rem 0 0.2rem 1.1rem;
-    font-size: clamp(1.05rem, 1.7vw, 1.5rem);
-    font-weight: 700;
-    line-height: 1.5;
-    letter-spacing: -0.01em;
-    max-width: 56ch;
-    text-wrap: balance;
-  }
+  .legend { display: flex; gap: 2cqw; font-size: 0.8em; color: var(--ink-soft); }
+  .legend i { display: inline-block; width: 1cqw; height: 1cqw; border-radius: 2px; margin-right: 0.5cqw; vertical-align: -0.1cqw; }
 
-  .kicker {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-family: var(--font-mono);
-    font-size: 0.7rem;
-    letter-spacing: 0.12em;
-    color: var(--accent-ink);
-    background: var(--accent);
-    padding: 0.28em 0.7em;
-    border-radius: 2px;
-    align-self: flex-start;
-  }
+  /* 大きな数字（スライド2） */
+  .hero { display: flex; align-items: baseline; gap: 2.5cqw; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+  .hero .num { font-size: 9cqw; letter-spacing: -0.03em; }
+  .hero .old { color: var(--ink-faint); }
+  .hero .new { color: var(--accent); }
+  .hero .arrow { font-size: 5cqw; color: var(--ink-faint); }
+  .hero .unit { font-size: 0.4em; margin-left: 0.1em; }
 
-  /* ── 話者ノート ───────────────────────────────────────────── */
+  /* 話者ノート（N キーで表示） */
   .notes { display: none; }
   body.notes-on .slide.active .notes {
     display: block;
-    margin-top: auto;
-    border-top: 1px dashed var(--rule);
-    padding-top: 0.7rem;
-    font-size: 0.85rem;
-    color: var(--ink-soft);
-    max-width: 78ch;
-  }
-  .notes b { color: var(--accent); font-weight: 700; }
-
-  /* ── 操作 ──────────────────────────────────────────────── */
-  .controls {
-    flex: 0 0 auto;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem var(--pad) 0.7rem;
+    position: absolute; left: 0; right: 0; bottom: 0;
+    padding: 1.6cqh 5cqw;
+    background: var(--surface-2);
     border-top: 1px solid var(--rule);
-  }
-  .controls button {
-    font-family: var(--font-mono);
-    font-size: 0.72rem;
-    letter-spacing: 0.06em;
-    color: var(--ink-soft);
-    background: var(--surface);
-    border: 1px solid var(--rule);
-    border-radius: 2px;
-    padding: 0.35em 0.8em;
-    cursor: pointer;
-  }
-  .controls button:hover { border-color: var(--accent); color: var(--accent); }
-  .controls button:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
-  }
-  .controls .hint {
-    font-family: var(--font-mono);
-    font-size: 0.68rem;
-    color: var(--ink-faint);
-    margin-left: auto;
-  }
-
-  @media (max-width: 700px) {
-    .controls .hint { display: none; }
+    font-size: 1.25cqw; line-height: 1.6; color: var(--ink-soft);
   }
 
   @media print {
-    .deck { height: auto; }
-    .topbar, .progress, .controls { display: none; }
-    .stage { overflow: visible; }
-    .slide { position: static; display: flex !important; break-after: page; min-height: 92vh; }
-    .notes { display: block !important; }
+    @page { size: 16in 9in; margin: 0; }
+    body { overflow: visible; background: none; }
+    .stage { position: static; display: block; }
+    .slide { display: block !important; width: 16in; height: 9in; break-after: page; }
   }
 </style>
 </head>
 <body>
-<div class="deck">
-  <div class="topbar">
-    <span class="sec" id="bar-sec">はじめに</span>
-    <span class="time" id="bar-time">00–05分</span>
-    <span class="spacer"></span>
-    <span class="count"><b id="bar-n">1</b> / <span id="bar-total">1</span></span>
-  </div>
-  <div class="progress"><i id="bar-fill"></i></div>
+<div class="stage" id="stage">
 
-  <div class="stage" id="stage">
-    <!-- 01 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="はじめに" data-time="00–05分">
-      <span class="eyebrow">勉強会 · 70分</span>
-      <h1>Vite 7 → 8 を入口に、<br>JS のビルドを学び直す</h1>
-      <p class="lead">Vite 8 が出た。7 と何が違う？——この具体的な問いから入って、<br>
-        <span class="em">ビルドツールが中で何をやっているのか</span>を一段深く掘ります。</p>
-      <p class="eyebrow">Vite · Rollup · Rolldown · esbuild · Oxc · webpack</p>
-      <aside class="notes">前半（パート1）で「7 → 8 で何が変わり、実務にどう影響するか」を整理する。後半（パート2〜6）が本題の deep dive。前提知識に不安がある人は <code>docs/js-background.md</code>。</aside>
-    </section>
+  <!-- 01 表紙 -->
+  <section class="slide cover">
+    <h1 class="title">Vite 8 で学ぶ JavaScript のビルド</h1>
+    <div class="body">
+      <p>7 → 8 でなぜ速くなったのかを、ビルドの仕組みから理解する</p>
+      <p class="small">発表者名 ／ 日付</p>
+    </div>
+    <aside class="notes">Vite 8 で速くなったと聞き、その理由を調べるうちに、JS のビルドが中で何をしているのかが見えてきた。本発表ではその内容を共有する。</aside>
+  </section>
 
-    <!-- 02 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="はじめに" data-time="00–05分">
-      <span class="eyebrow">目次</span>
-      <h2>本日の構成</h2>
-      <div class="tablewrap">
-        <table>
-          <thead><tr><th>パート</th><th>内容</th><th>時間</th></tr></thead>
-          <tbody>
-            <tr><td><b>1 · Vite の仕組み</b></td><td>開発サーバーと本番ビルドの二層構造</td><td class="mono">05–17</td></tr>
-            <tr><td><b>2 · Vite 7 → 8 の変更点</b></td><td>内部エンジンの置き換え、実測、更新時の確認事項</td><td class="mono">17–30</td></tr>
-            <tr><td><b>3 · なぜビルドが必要か</b></td><td>モジュールの歴史、バンドラの成り立ち</td><td class="mono">30–45</td></tr>
-            <tr><td><b>4 · ビルドの5工程</b></td><td>Resolve / Load / Transform / Optimize / Emit</td><td class="mono">45–52</td></tr>
-            <tr><td><b>5 · ツールの内部構造</b></td><td>webpack / Rollup / Rolldown の出力と構造</td><td class="mono">52–68</td></tr>
-            <tr><td><b>6 · まとめ</b></td><td>5工程で振り返る、確認事項</td><td class="mono">68–73</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <p class="lead">パート1〜2 で Vite の動きと 7 → 8 の変更を具体的に確認し、パート3〜5 で「なぜそうなるのか」を掘り下げます。</p>
-      <aside class="notes">時間が押した場合はパート5を短縮し、まとめを優先する。</aside>
-    </section>
-
-    <!-- 03 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="はじめに" data-time="00–05分">
-      <span class="eyebrow">要点</span>
-      <h2>持ち帰る2点</h2>
-      <ol class="steps">
-        <li><b>Vite 7 → 8 の主な変更は、内部エンジンの JS 製 → Rust 製への置き換え</b><br>
-          <span style="color:var(--ink-soft)">開発サーバー・本番ビルドの両方。動作モデルと設定の基本構造は変わらない。</span></li>
-        <li><b>エンジンは変わっても、ビルドの5工程という骨格は変わらない</b><br>
-          <span style="color:var(--ink-soft)">Resolve / Load / Transform / Optimize / Emit。既存の知識は引き続き通用する。</span></li>
+  <!-- 02 目次 -->
+  <section class="slide">
+    <h2 class="title">今日の流れ</h2>
+    <div class="body">
+      <ol>
+        <li><b>Vite 7 → 8 で何が変わったか</b><span class="sub">Vite とは何か、中のツールがどう入れ替わり、ビルドがどれだけ速くなったか</span></li>
+        <li><b>JavaScript のビルドは何をしているのか</b><span class="sub">なぜビルドが必要なのか、ビルドツールに共通する5つの工程</span></li>
+        <li><b>Vite 8 はなぜ速くなったのか</b><span class="sub">2 で学んだ5工程の視点から、1 の結果を読み解く</span></li>
+        <li><b>まとめ</b></li>
       </ol>
-      <p class="lead">この2点を、パート2で実測により確認し、パート6で改めて整理します。</p>
-      <aside class="notes">この2点が全体の結論。以降はその根拠と背景。</aside>
-    </section>
+      <p>2 のビルドの仕組みを中心に据え、3 でそれを使って答え合わせをする。</p>
+    </div>
+    <aside class="notes">約35分。1 で問いを立て、2 で仕組みを学び、3 で回収する。</aside>
+  </section>
 
-    <!-- 04 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート1 · Vite の仕組み" data-time="05–17分">
-      <span class="eyebrow">パート1 の前提</span>
-      <h2>Vite とは</h2>
-      <p class="lead">開発サーバーと本番ビルドをまとめた、フロントエンドの開発ツール。
-        React / Vue / Svelte など、フレームワークを問わず使えます。</p>
-      <div class="tablewrap">
-        <table>
-          <thead><tr><th>コマンド</th><th>内容</th></tr></thead>
-          <tbody>
-            <tr><td class="mono">npm run dev</td><td>開発サーバーを起動する（ソースを編集しながら動作を確認）</td></tr>
-            <tr><td class="mono">npm run build</td><td>本番用のファイルを <code class="inline">dist/</code> に生成する</td></tr>
-            <tr><td class="mono">npm run preview</td><td>生成した本番ファイルをローカルで確認する</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <ul class="points">
-        <li>Vite 自体はバンドラではない。内部でバンドラ（現在は Rolldown）を呼ぶ</li>
-        <li class="key"><b>「開発サーバー」と「本番ビルド」は別の仕組みで動く</b>——これが以降の話の土台</li>
+  <!-- 03 Vite とは -->
+  <section class="slide">
+    <h2 class="title">1. Vite とは</h2>
+    <div class="body">
+      <ul>
+        <li><b>フロントエンド開発用のビルドツール</b><span class="sub">開発サーバーと本番ビルドの機能をまとめて提供する。読みは「ヴィート」（フランス語で「速い」）</span></li>
+        <li><b>2020年に公開</b><span class="sub">Vue.js の作者 Evan You 氏が開発。最新のメジャーバージョンは Vite 8（2026年3月）</span></li>
+        <li><b>主要フレームワークで標準のツール</b><span class="sub">Vue・React・Svelte 等に対応し、Nuxt・SvelteKit・Astro 等では標準のビルドツールとなっている</span></li>
       </ul>
-      <aside class="notes">この勉強会は Vite の使用経験を前提にしない。まずここで全体像を共有する。</aside>
-    </section>
+      <table>
+        <thead><tr><th style="width:24%">コマンド</th><th>用途</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">vite</td><td>開発サーバーを起動する（ソースを編集しながら動作を確認）</td></tr>
+          <tr><td class="mono">vite build</td><td>本番用のファイルを <code class="inline">dist/</code> に出力する</td></tr>
+          <tr><td class="mono">vite preview</td><td>出力した本番用のファイルをローカルで確認する</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <aside class="notes">今回は主に vite build（本番ビルド）を扱う。開発サーバーとの違いは後半で説明する。</aside>
+  </section>
 
-    <!-- 05 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート1 · Vite の仕組み" data-time="05–17分">
-      <span class="eyebrow">前提の確認</span>
-      <h2>ツールの<span class="q">階層</span>：Vite と webpack の位置</h2>
-      <figure>
-        <div class="figscroll">
-        <svg viewBox="0 0 900 320" role="img" aria-label="ツールの層構造。Vite は開発ツール一式の層、webpack はバンドラの層にあり、比較対象がずれていることを示す図" style="min-width:560px">
-          <text x="286" y="30" text-anchor="end" class="svg-t sm">フレームワーク</text>
-          <rect x="300" y="14" width="480" height="42" rx="2" class="svg-box"/>
-          <text x="318" y="41" class="svg-t">Next.js · Nuxt · SvelteKit · Astro</text>
+  <!-- 04 Vite の位置づけ -->
+  <section class="slide">
+    <h2 class="title">1. Vite は自分でビルドしていない</h2>
+    <div class="body">
+      <div class="fig"><svg preserveAspectRatio="xMinYMid meet" viewBox="0 0 900 250" role="img" aria-label="ツールの層構造。Vite はフレームワークとバンドラの間にあり、バンドラと変換器を束ねる層にいる">
+          <text x="286" y="40" text-anchor="end" class="svg-t sm">フレームワーク</text>
+          <rect x="300" y="18" width="520" height="42" rx="2" class="svg-box"/>
+          <text x="318" y="45" class="svg-t">Vue · React · Svelte · Nuxt · SvelteKit · Astro</text>
 
-          <text x="286" y="86" text-anchor="end" class="svg-t sm">開発ツール一式</text>
-          <rect x="300" y="70" width="480" height="42" rx="2" class="svg-box"/>
-          <text x="318" y="97" class="svg-t"><tspan class="svg-t a" font-size="14">Vite</tspan> · Parcel</text>
-          <text x="560" y="97" class="svg-t sm">開発サーバー ＋ HMR ＋ 設定済みバンドラ</text>
+          <text x="286" y="98" text-anchor="end" class="svg-t sm">開発ツール一式</text>
+          <rect x="300" y="76" width="520" height="42" rx="2" class="svg-mark"/>
+          <text x="318" y="103" class="svg-t"><tspan class="svg-t a" font-size="14">Vite</tspan> · Parcel</text>
+          <text x="560" y="103" class="svg-t sm">開発サーバー ＋ 構成済みのビルド機能</text>
 
-          <text x="286" y="142" text-anchor="end" class="svg-t sm">バンドラ</text>
-          <rect x="300" y="126" width="480" height="42" rx="2" class="svg-box"/>
-          <text x="318" y="153" class="svg-t"><tspan class="svg-t a" font-size="14">webpack</tspan> · Rollup · <tspan class="svg-t s">esbuild</tspan> · Rolldown · Rspack</text>
+          <text x="286" y="156" text-anchor="end" class="svg-t sm">バンドラ</text>
+          <rect x="300" y="134" width="520" height="42" rx="2" class="svg-box"/>
+          <text x="318" y="161" class="svg-t">Rollup · <tspan class="svg-t s">Rolldown</tspan> · esbuild · webpack</text>
 
-          <text x="286" y="198" text-anchor="end" class="svg-t sm">トランスパイラ</text>
-          <rect x="300" y="182" width="480" height="42" rx="2" class="svg-box"/>
-          <text x="318" y="209" class="svg-t">Babel · SWC · tsc · <tspan class="svg-t s">esbuild</tspan> · Oxc</text>
-
-          <text x="286" y="254" text-anchor="end" class="svg-t sm">minifier</text>
-          <rect x="300" y="238" width="480" height="42" rx="2" class="svg-box"/>
-          <text x="318" y="265" class="svg-t">terser · <tspan class="svg-t s">esbuild</tspan> · oxc-minify · lightningcss</text>
-
-          <!-- Vite と webpack を結ぶ破線 -->
-          <path d="M 800 91 C 850 91, 850 147, 800 147" class="svg-line-d" fill="none"/>
-          <text x="812" y="122" class="svg-t a" font-size="11.5">層が違う</text>
-
-          <text x="300" y="306" class="svg-t sm">
-            <tspan class="svg-t s">esbuild</tspan> が3つの層に出てくるのが、話をややこしくしている犯人
-          </text>
-        </svg>
-        </div>
-        <figcaption>対等に比べるなら〔webpack ＋ webpack-dev-server ＋ 各種 loader ＋ plugin〕のセット ↔〔Vite〕。</figcaption>
-      </figure>
-      <aside class="notes">「Vite と webpack どっちがいい？」という質問が出たら、<b>この図に戻ってくる</b>。設定量の差の大半は「Vite が既定で入れてくれている分」。</aside>
-    </section>
-
-    <!-- 06 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート1 · Vite の仕組み" data-time="05–17分">
-      <span class="eyebrow">Vite の全体像</span>
-      <h2>Vite の<span class="q">二層構造</span>：開発サーバーと本番ビルド</h2>
-      <div class="cards">
-        <div class="card"><span class="tag">開発時 · vite</span><h3>開発サーバー</h3>
-          <p><b>バンドルしない。</b>ブラウザのネイティブ ESM をそのまま使い、必要な分だけその場で変換。</p></div>
-        <div class="card mark"><span class="tag">本番 · vite build</span><h3>本番ビルド</h3>
-          <p><b>バンドルする。</b>依存グラフを作って tree shaking / minify / code splitting。</p></div>
-      </div>
-      <p class="lead">この2つは<span class="em">別々のコード</span>で動きます。そのため「開発では動くのに本番で問題が出る」ことが起こり得ます（リリース前に <code class="inline">vite preview</code> で確認する理由）。</p>
-      <aside class="notes">この2層構造がパート1の中心。以降、開発サーバー側 → 本番ビルド側の順に仕組みを見る。</aside>
-    </section>
-
-    <!-- 07 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート1 · Vite の仕組み" data-time="05–17分">
-      <span class="kicker">Vite の開発サーバー</span>
-      <h2>開発サーバーの方式：<span class="q">全体バンドル と オンデマンド</span></h2>
-      <figure>
-        <div class="figscroll">
-        <svg viewBox="0 0 940 430" role="img" aria-label="webpack と Vite の開発サーバー比較。webpack は起動時にアプリ全体をバンドルして1ファイルで配信、Vite は依存だけ事前バンドルし、ソースは要求された分だけ変換して個別に配信する" style="min-width:680px">
-          <defs>
-            <marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-              <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
-            </marker>
-            <marker id="ar2a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-              <path d="M 0 0 L 10 5 L 0 10 z" class="svg-fill-a"/>
-            </marker>
-          </defs>
-
-          <line x1="470" y1="10" x2="470" y2="420" class="svg-rule"/>
-
-          <text x="24" y="26" class="svg-t hd">webpack dev server</text>
-          <text x="494" y="26" class="svg-t hd">Vite dev server</text>
-
-          <!-- 行A: 起動時 -->
-          <text x="24" y="60" class="svg-t mono">起動時にやること</text>
-          <text x="494" y="60" class="svg-t mono">起動時にやること</text>
-
-          <rect x="24" y="72" width="400" height="20" rx="2" class="svg-fill-a"/>
-          <text x="24" y="112" class="svg-t sm">アプリのソースを全部読んでバンドルする</text>
-          <text x="24" y="130" class="svg-t a" font-size="12">→ プロジェクトが大きいほど比例して遅くなる</text>
-
-          <rect x="494" y="72" width="56" height="20" rx="2" class="svg-fill-s"/>
-          <text x="494" y="112" class="svg-t sm">node_modules だけ事前バンドル（1回・キャッシュ）</text>
-          <text x="494" y="130" class="svg-t s" font-size="12">→ アプリのソースは1行も読まない</text>
-
-          <line x1="24" y1="152" x2="424" y2="152" class="svg-rule"/>
-          <line x1="494" y1="152" x2="894" y2="152" class="svg-rule"/>
-
-          <!-- 行B: 配信 -->
-          <text x="24" y="180" class="svg-t mono">ブラウザへの配信</text>
-          <text x="494" y="180" class="svg-t mono">ブラウザへの配信</text>
-
-          <rect x="24" y="196" width="132" height="76" rx="2" class="svg-box"/>
-          <text x="90" y="240" text-anchor="middle" class="svg-t">dev server</text>
-          <rect x="292" y="196" width="132" height="76" rx="2" class="svg-box-2"/>
-          <text x="358" y="240" text-anchor="middle" class="svg-t">ブラウザ</text>
-          <line x1="158" y1="234" x2="288" y2="234" class="svg-line-a" marker-end="url(#ar2a)"/>
-          <text x="223" y="224" text-anchor="middle" class="svg-t mono">bundle.js</text>
-          <text x="223" y="290" text-anchor="middle" class="svg-t sm">1リクエスト・完成済みの1ファイル</text>
-
-          <rect x="494" y="196" width="132" height="100" rx="2" class="svg-box"/>
-          <text x="560" y="252" text-anchor="middle" class="svg-t">dev server</text>
-          <rect x="762" y="196" width="132" height="100" rx="2" class="svg-box-2"/>
-          <text x="828" y="252" text-anchor="middle" class="svg-t">ブラウザ</text>
-          <line x1="628" y1="214" x2="758" y2="214" class="svg-line" marker-end="url(#ar2)"/>
-          <text x="693" y="208" text-anchor="middle" class="svg-t mono">main.js</text>
-          <line x1="628" y1="248" x2="758" y2="248" class="svg-line" marker-end="url(#ar2)"/>
-          <text x="693" y="242" text-anchor="middle" class="svg-t mono">counter.js</text>
-          <line x1="628" y1="282" x2="758" y2="282" class="svg-line" marker-end="url(#ar2)"/>
-          <text x="693" y="276" text-anchor="middle" class="svg-t mono">style.css</text>
-          <text x="693" y="312" text-anchor="middle" class="svg-t sm">要求された分だけ、その場で変換</text>
-
-          <line x1="24" y1="336" x2="424" y2="336" class="svg-rule"/>
-          <line x1="494" y1="336" x2="894" y2="336" class="svg-rule"/>
-
-          <!-- 行C: 保存時 -->
-          <text x="24" y="364" class="svg-t mono">ファイルを保存したとき</text>
-          <text x="494" y="364" class="svg-t mono">ファイルを保存したとき</text>
-          <text x="24" y="390" class="svg-t sm">変更分を再バンドルして差し替える</text>
-          <text x="24" y="410" class="svg-t a" font-size="12">→ これも規模に比例する</text>
-          <text x="494" y="390" class="svg-t sm">そのファイル1つだけ変換して差し替える</text>
-          <text x="494" y="410" class="svg-t s" font-size="12">→ 規模に関係なく一定時間</text>
-        </svg>
-        </div>
-        <figcaption>Vite の核心は「アプリのソースを事前に全部処理しない」。ブラウザのモジュール解決能力を、そのままバンドラ代わりに使っている。</figcaption>
-      </figure>
-      <aside class="notes">本スライドは時間を多めに取る。左（起動時に全体をバンドルする方式）と右（Vite の方式）のバー長の差が、起動時の待ち時間の差に対応する。</aside>
-    </section>
-
-    <!-- 08 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート1 · Vite の仕組み" data-time="05–17分">
-      <span class="eyebrow">2つの疑問</span>
-      <h2>事前バンドルと<span class="q">本番バンドルの理由</span></h2>
-      <div class="cards">
-        <div class="card"><span class="tag">なぜ node_modules だけ</span><h3>書き換え先が要るから</h3>
-          <p>パッケージ名を実パスに直すには、その実パスが存在しないといけない。</p></div>
-        <div class="card"><span class="tag">なぜ node_modules だけ</span><h3>リクエスト数を抑えるため</h3>
-          <p>lodash のようなパッケージは内部が数百モジュール。そのまま配ると数百リクエスト。</p></div>
-        <div class="card mark"><span class="tag">なぜ本番はバンドル</span><h3>実回線では成立しないから</h3>
-          <p>非バンドル配信はローカルホストだから速いだけ。ネットワーク越しに数百リクエストは遅い。</p></div>
-      </div>
-      <p class="lead"><span class="em">開発と本番で別の道を通ります。</span>
-        つまり「dev では動いたのに本番で壊れる」が起こり得る、Vite の既知のトレードオフ。<br>
-        だからリリース前に <code class="inline">vite preview</code> で本番ビルドを確認します。</p>
-      <aside class="notes">実務で効く注意点なので飛ばさない。<b>「preview を通してからレビュー依頼」をチームのルールにしませんか</b>、と提案に繋げてもいい。</aside>
-    </section>
-
-    <!-- 09 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート2 · Vite 7 → 8 の変更点" data-time="17–30分">
-      <span class="kicker">まず結論</span>
-      <h2>結論：<span class="q">内部エンジンの置き換え</span>（JS 製 → Rust 製）</h2>
-      <div class="tablewrap">
-        <table>
-          <thead><tr><th>処理</th><th>Vite 7</th><th>Vite 8</th></tr></thead>
-          <tbody>
-            <tr><td>依存の事前バンドル（開発時）</td><td class="mono">esbuild</td><td class="mono">Rolldown</td></tr>
-            <tr><td>TS / JSX の変換・JS の minify</td><td class="mono">esbuild</td><td class="mono">Oxc</td></tr>
-            <tr><td>本番のバンドル</td><td class="mono">Rollup</td><td class="mono">Rolldown</td></tr>
-            <tr><td>CSS の変換・minify</td><td class="mono">esbuild</td><td class="mono">lightningcss</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <p class="lead">影響範囲は<span class="em">開発サーバーと本番ビルドの両方</span>です。<br>
-        一方で、開発サーバーの動作モデル（事前バンドル → ネイティブ ESM → オンデマンド変換 → HMR）と、
-        設定ファイルの基本構造は変わりません。</p>
-      <aside class="notes">Vite 8 はメジャーバージョンのため、エンジン以外の変更（対応 Node バージョン、非推奨 API の削除、一部デフォルト値の変更）も含む。移行時は公式の移行ガイドを確認する。以降、このパートで各項目を実測で確認する。</aside>
-    </section>
-
-    <!-- 10 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート2 · Vite 7 → 8 の変更点" data-time="17–30分">
-      <span class="kicker">実物 · 7 と 8 の比較</span>
-      <h2>開発時の変換結果：<span class="q">7 と 8 で同一</span></h2>
-      <p class="eyebrow">自分が書いたコード</p>
-      <pre class="code"><span class="k">import</span> { nanoid } <span class="k">from</span> <span class="a">'nanoid'</span>;</pre>
-      <p class="eyebrow">開発サーバーが返すコード（:5273 も :5173 も）</p>
-      <pre class="code"><span class="k">import</span> { nanoid } <span class="k">from</span> <span class="a">"/node_modules/.vite/deps/nanoid.js?v=xxxxxxxx"</span>;
-<span class="c">// ?v= のハッシュだけ違う。書き換えのロジックは同一</span></pre>
-      <ul class="points">
-        <li class="key"><b>bare specifier <code class="inline">'nanoid'</code> → 実パス</b>の書き換え：7 と 8 で同じ</li>
-        <li>相対 import（<code class="inline">./counter.js</code>）は書き換えなし：7 と 8 で同じ</li>
+          <text x="286" y="214" text-anchor="end" class="svg-t sm">変換・圧縮</text>
+          <rect x="300" y="192" width="520" height="42" rx="2" class="svg-box"/>
+          <text x="318" y="219" class="svg-t">esbuild · <tspan class="svg-t s">Oxc</tspan> · SWC · Babel · <tspan class="svg-t s">Lightning CSS</tspan></text>
+        </svg></div>
+      <ul>
+        <li>実際のビルド処理は、バンドラや変換器といった下の層のツールが担当している</li>
+        <li>Vite はそれらを選んで組み合わせ、設定済みの状態で提供する</li>
       </ul>
-      <p class="lead">書き換えのロジックは同じです。実行するエンジン（esbuild → Rolldown / Oxc）が変わっています。</p>
-      <aside class="notes"><code>02b-vite7</code>（:5273）と <code>02-vite</code>（:5173）を同時に起動し、両者の Network タブでレスポンス本文を比較すると、書き換え結果が一致することを確認できる。</aside>
-    </section>
+    </div>
+    <aside class="notes">そのため、Vite のバージョンが上がると中のツールが丸ごと入れ替わる、ということが起こり得る。Vite 8 ではまさにそれが起きた。esbuild はバンドラにも変換器にもなれるため、両方の層に登場する。</aside>
+  </section>
 
-    <!-- 11 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート2 · Vite 7 → 8 の変更点" data-time="17–30分">
-      <span class="kicker">本番ビルド</span>
-      <h2>本番バンドラの置き換え：<span class="q">Rollup → Rolldown</span></h2>
-      <div class="tablewrap">
-        <table>
-          <thead><tr><th>処理</th><th>Vite 7</th><th>Vite 8</th></tr></thead>
-          <tbody>
-            <tr><td>本番のバンドル</td><td class="mono">Rollup（JS 製）</td><td class="mono"><b>Rolldown</b>（Rust・Oxc ベース）</td></tr>
-            <tr><td>JS の変換・minify</td><td class="mono">esbuild</td><td class="mono">Oxc</td></tr>
-            <tr><td>CSS の変換・minify</td><td class="mono">esbuild</td><td class="mono"><b>lightningcss</b></td></tr>
-            <tr><td><code class="inline">vite</code> パッケージの依存</td><td class="mono">esbuild, rollup ほか</td><td class="mono">rolldown, lightningcss ほか</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <p class="lead"><code class="inline">vite.config.js</code> の基本構造は変わりません（<code class="inline">rollupOptions</code> という名称も維持）。Rolldown が Rollup のプラグイン API 互換を目標としているためです。</p>
-      <aside class="notes">設定名が rollupOptions のまま維持されているのは、API 互換を保ったまま実装を置き換えるという Rolldown の設計方針による。</aside>
-    </section>
-
-    <!-- 12 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート2 · Vite 7 → 8 の変更点" data-time="17–30分">
-      <span class="kicker">本番ビルド · 続き</span>
-      <h2>esbuild の役割の<span class="q">移管先</span></h2>
-      <p class="lead">Vite 7 は <b>Rollup と esbuild の 2 ツール構成</b>でした。
-        Rollup がバンドルを担当し、JS の変換・minify は esbuild が担当していました。<br>
-        Vite 8 では、esbuild が担っていた処理がすべて <b>Oxc</b>（Rolldown が土台とする Rust 製ツールチェーン）に移りました。</p>
-      <div class="tablewrap">
-        <table>
-          <thead><tr><th>esbuild が担当していた処理（Vite 7）</th><th>Vite 8 での担当</th></tr></thead>
-          <tbody>
-            <tr><td>依存の事前バンドル（開発時 / <code class="inline">optimizeDeps</code>）</td><td class="mono">Rolldown</td></tr>
-            <tr><td>TS・JSX → JS の変換（開発・本番とも）</td><td class="mono">Oxc</td></tr>
-            <tr><td>構文のダウンレベル（<code class="inline">build.target</code>）</td><td class="mono">Oxc</td></tr>
-            <tr><td>JS の minify（Vite の既定 minifier）</td><td class="mono">Oxc</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <p class="pull">Rolldown ＝ <span class="em">Rollup の役割 ＋ esbuild の役割</span>を<br>
-        Rust の 1 ツール（Oxc ベース）に統合したもの。</p>
-      <aside class="notes">「Rollup → Rolldown」と「esbuild → Oxc」は別々の移行ではなく、1 つの統合。Vite 8 の <code>vite</code> パッケージの依存から <code>rollup</code> と <code>esbuild</code> が消え、<code>rolldown</code> に置き換わることが <code>npm ls</code> で確認できる。Oxc は parser / transformer / minifier / resolver を備えた Rust 製ツールチェーン。</aside>
-    </section>
-
-    <!-- 13 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート2 · Vite 7 → 8 の変更点" data-time="17–30分">
-      <span class="kicker">実測 ①</span>
-      <h2>実測①：<span class="q">依存関係とサイズ</span></h2>
-      <div class="tablewrap">
-        <table>
-          <thead><tr><th></th><th>Vite 7（02b-vite7）</th><th>Vite 8（02-vite）</th></tr></thead>
-          <tbody>
-            <tr><td class="mono">npm ls の主役</td><td class="mono">esbuild@0.28 / rollup@4.63</td><td class="mono">rolldown@1.2 / lightningcss@1.33</td></tr>
-            <tr><td>インストール総数</td><td>16</td><td>17</td></tr>
-            <tr><td class="mono">node_modules</td><td>21 MB</td><td>33 MB</td></tr>
-            <tr><td>modules transformed</td><td>10</td><td>11</td></tr>
-            <tr><td>entry JS / CSS / heavy</td><td>2,744 / 320 / 188 B</td><td>2,776 / 464 / 185 B</td></tr>
-            <tr><td class="mono">index.html</td><td>829 B</td><td>829 B</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <p class="lead">サイズ・速度の差は<span class="em">この規模では誤差</span>。CSS が少し大きいのは lightningcss が <code class="inline">color-scheme:light dark</code> を古いブラウザ向けに<span class="em">トランスパイル（展開）</span>するから（次のスライド）。</p>
-      <aside class="notes"><code>node_modules</code> が 21→33MB なのは rolldown / lightningcss のネイティブバイナリ（プラットフォーム別）が入るから。CI のキャッシュ設計に効くことがある、と実務向けに一言。</aside>
-    </section>
-
-    <!-- 14 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート2 · Vite 7 → 8 の変更点" data-time="17–30分">
-      <span class="kicker">実測 ②</span>
-      <h2>実測②：<span class="q">出力コードに現れる差</span></h2>
-      <p class="eyebrow">JS：文字列リテラルの扱い</p>
-      <pre class="code"><span class="c">// Vite 7 = esbuild：const を保持、文字列は "..."</span>
-<span class="k">const</span> r = document.createElement(<span class="a">"link"</span>).relList;
-
-<span class="c">// Vite 8 = Rolldown / Oxc：let を使い、文字列を全部 `...` に</span>
-<span class="k">let</span> e = document.createElement(<span class="a">`link`</span>).relList;</pre>
-      <ul class="points">
-        <li class="key">entry JS 内のバッククォート：<b>Vite 7 は 8 個</b>（本物のテンプレートリテラルだけ）／ <b>Vite 8 は 84 個</b>（全文字列を変換）</li>
-        <li>CSS：esbuild は<b>ほぼ minify だけ</b>（順序も保つ）／ <b>lightningcss は変換までやる</b> — <code class="inline">color-scheme:light dark</code> を <code class="inline">--lightningcss-*</code> 変数 ＋ <code class="inline">@media</code> に <b>lowering</b>（＝ minify ではなくトランスパイル）</li>
+  <!-- 05 7 → 8 で何が変わったか -->
+  <section class="slide">
+    <h2 class="title">1. Vite 7 → 8 で中のツールが入れ替わった</h2>
+    <div class="body">
+      <table>
+        <thead><tr><th>処理</th><th style="width:26%">Vite 7</th><th style="width:30%">Vite 8</th></tr></thead>
+        <tbody>
+          <tr><td>本番のバンドル</td><td class="mono">Rollup（JS）</td><td class="mono"><b>Rolldown（Rust）</b></td></tr>
+          <tr><td>TypeScript・JSX の変換、JS の圧縮</td><td class="mono">esbuild（Go）</td><td class="mono"><b>Oxc（Rust）</b></td></tr>
+          <tr><td>CSS の圧縮</td><td class="mono">esbuild（Go）</td><td class="mono"><b>Lightning CSS（Rust）</b></td></tr>
+          <tr><td>開発時の依存パッケージの事前バンドル</td><td class="mono">esbuild（Go）</td><td class="mono"><b>Rolldown（Rust）</b></td></tr>
+        </tbody>
+      </table>
+      <ul>
+        <li>JS 製と Go 製のツールの組み合わせから、<span class="em">Rust 製のツールに統一</span>された</li>
+        <li>アプリのコードや設定ファイルの書き方は、基本的に変わらない</li>
       </ul>
-      <p class="lead">動作は等価ですが出力の見た目は変わるため、diff レビューやスナップショットテストは影響を受けます。CSS の差分は minify ではなく <b>lightningcss の構文 lowering</b> が主因です。</p>
-      <aside class="notes">スナップショットで dist を固定している場合、Vite 8 への更新ですべて失敗する。これは不具合ではなくエンジンの変更による出力差。lightningcss は minify に加えて、ブラウザターゲットに応じた構文の lowering も行う。差分の読み方をチームで共有しておく。</aside>
-    </section>
+    </div>
+    <aside class="notes">Rolldown は Rollup を Rust で作り直したもので、内部で Oxc を使っている。CSS の変換（PostCSS）は 7・8 とも変わらない。</aside>
+  </section>
 
-    <!-- 15 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート2 · Vite 7 → 8 の変更点" data-time="17–30分">
-      <span class="kicker">更新時の確認事項</span>
-      <h2>Vite 8 更新時の<span class="q">チェックリスト</span></h2>
-      <div class="tablewrap">
-        <table>
-          <thead><tr><th>観点</th><th>内容</th></tr></thead>
-          <tbody>
-            <tr><td>アプリケーションのコード</td><td>影響なし。<code class="inline">import</code> の記述も同じ</td></tr>
-            <tr><td><code class="inline">vite.config.js</code></td><td>基本構造は同じ（<code class="inline">rollupOptions</code> 等の名称も維持）。メジャー更新のため、移行ガイドの破壊的変更（対応 Node バージョン・非推奨 API・デフォルト値）を確認する</td></tr>
-            <tr><td>開発サーバーの動作</td><td>動作モデルは同じ。内部エンジンが Rolldown / Oxc に変わり、事前バンドル生成物のハッシュ等は変わる</td></tr>
-            <tr><td><code class="inline">dist</code> のスナップショットテスト</td><td>すべて失敗する。エンジンが変わり出力の中身が変わるため。スナップショットを更新して対応する</td></tr>
-            <tr><td>CSS の出力</td><td>lightningcss は構文の lowering も行う（<code class="inline">color-scheme</code> の展開など）。出力の差分が大きくなる場合がある</td></tr>
-            <tr><td><code class="inline">node_modules</code> のサイズ</td><td>約 21 MB → 約 33 MB（Rust 製バイナリを含むため）。CI のキャッシュ設定に影響する場合がある</td></tr>
-            <tr><td>Rollup プラグイン</td><td>Rolldown は API 互換を目標とするが完全ではない。使用中のプラグインの動作確認が必要</td></tr>
-            <tr><td>参考情報の鮮度</td><td>「開発は esbuild / 本番は Rollup」という記述は Vite 7 までのもの。<code class="inline">npm ls</code> で実際の依存を確認する</td></tr>
-          </tbody>
-        </table>
+  <!-- 06 実測 -->
+  <section class="slide">
+    <h2 class="title">1. 実際に測ってみた</h2>
+    <div class="body">
+      <div class="legend" aria-hidden="true">
+        <span><i style="background:var(--v7)"></i>Vite 7</span>
+        <span><i style="background:var(--v8)"></i>Vite 8</span>
       </div>
-      <p class="lead">変更点を把握できれば、更新の可否は判断できます。リリース前に <code class="inline">vite preview</code> で本番ビルドを確認する点は、バージョンに関わらず共通です。</p>
-      <aside class="notes">この表がパート1の到達点。</aside>
-    </section>
+      <div class="fig"><svg preserveAspectRatio="xMinYMid meet" viewBox="0 0 960 330" role="img" aria-label="ビルド時間の比較。JS 静的 import：Vite 7 29秒、Vite 8 0.5秒で58倍。JS コード分割あり：30秒と1.5秒で20倍。Vue 静的 import：11秒と2.3秒で4.8倍">
+          <line x1="440" y1="36" x2="440" y2="292" class="svg-rule" stroke-dasharray="2 4"/>
+          <line x1="630" y1="36" x2="630" y2="292" class="svg-rule" stroke-dasharray="2 4"/>
+          <line x1="820" y1="36" x2="820" y2="292" class="svg-rule" stroke-dasharray="2 4"/>
+          <text x="250" y="312" text-anchor="middle" class="svg-t mono">0</text>
+          <text x="440" y="312" text-anchor="middle" class="svg-t mono">10秒</text>
+          <text x="630" y="312" text-anchor="middle" class="svg-t mono">20秒</text>
+          <text x="820" y="312" text-anchor="middle" class="svg-t mono">30秒</text>
+          <text x="950" y="30" text-anchor="end" class="svg-t sm">速度比</text>
 
-    <!-- 16 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート3 · なぜビルドが必要か" data-time="30–45分">
-      <span class="eyebrow">後半の開始</span>
-      <h2>なぜ「ビルド」が必要か</h2>
-      <p class="lead">パート1・2 で見たとおり、Vite は内部で「ビルド」を行っています。
-        では、そもそもビルドとは何をする処理で、なぜ必要になったのか。<br>
-        ここを押さえると、設定ファイルとエラーメッセージが読めるようになります。</p>
-      <ul class="points">
-        <li>このパート（3）：ビルドが必要になった経緯（モジュールの歴史）</li>
-        <li>パート4：ビルドの5工程（全ツール共通の骨格）</li>
-        <li>パート5：各ツールの内部構造（webpack / Rollup / Rolldown）</li>
+          <text x="236" y="66" text-anchor="end" class="svg-t">JS · 静的 import</text>
+          <text x="236" y="84" text-anchor="end" class="svg-t sm">約 6,900 モジュール</text>
+          <rect class="bar svg-v7" x="250" y="46" width="551" height="24" rx="3"><title>JS・静的 import / Vite 7：29秒</title></rect>
+          <rect class="bar svg-v8" x="250" y="72" width="9.5" height="24" rx="3"><title>JS・静的 import / Vite 8：0.5秒</title></rect>
+          <text x="809" y="63" class="svg-t mono">29秒</text>
+          <text x="268" y="89" class="svg-t mono">0.5秒</text>
+          <text x="950" y="80" text-anchor="end" class="svg-t hd" font-size="20">58倍</text>
+
+          <text x="236" y="146" text-anchor="end" class="svg-t">JS · コード分割あり</text>
+          <text x="236" y="164" text-anchor="end" class="svg-t sm">約 6,900 モジュール</text>
+          <rect class="bar svg-v7" x="250" y="126" width="570" height="24" rx="3"><title>JS・コード分割あり / Vite 7：30秒</title></rect>
+          <rect class="bar svg-v8" x="250" y="152" width="28.5" height="24" rx="3"><title>JS・コード分割あり / Vite 8：1.5秒</title></rect>
+          <text x="828" y="143" class="svg-t mono">30秒</text>
+          <text x="287" y="169" class="svg-t mono">1.5秒</text>
+          <text x="950" y="160" text-anchor="end" class="svg-t hd" font-size="20">20倍</text>
+
+          <text x="236" y="226" text-anchor="end" class="svg-t">Vue · 静的 import</text>
+          <text x="236" y="244" text-anchor="end" class="svg-t sm">約 2,000 モジュール</text>
+          <rect class="bar svg-v7" x="250" y="206" width="209" height="24" rx="3"><title>Vue・静的 import / Vite 7：11秒</title></rect>
+          <rect class="bar svg-v8" x="250" y="232" width="43.7" height="24" rx="3"><title>Vue・静的 import / Vite 8：2.3秒</title></rect>
+          <text x="467" y="223" class="svg-t mono">11秒</text>
+          <text x="302" y="249" class="svg-t mono">2.3秒</text>
+          <text x="950" y="240" text-anchor="end" class="svg-t hd" font-size="20">4.8倍</text>
+
+          <line x1="250" y1="36" x2="250" y2="292" class="svg-line"/>
+        </svg></div>
+      <p class="small">CPU 8 コア。毎回 dist を削除した状態からビルド。</p>
+      <p>ツールを入れ替えただけで、なぜここまで速くなるのか。<span class="em">それを理解するには、ビルドが中で何をしているかを知る必要がある。</span></p>
+    </div>
+    <aside class="notes">ここでは理由を言わず、問いとして残す。Vue が 4.8 倍にとどまっている点も覚えておいてほしい、と一言添える。答え合わせはパート3で行う。</aside>
+  </section>
+
+  <!-- 07 なぜビルドするのか -->
+  <section class="slide">
+    <h2 class="title">2. そもそも、なぜビルドするのか</h2>
+    <div class="body">
+      <ul>
+        <li><b>他の言語を JavaScript にする</b><span class="sub">TypeScript・JSX・.vue・CSS の import 等。ブラウザは JavaScript しか実行できない</span></li>
+        <li><b>モジュールを解決する</b><span class="sub"><code class="inline">import 'nanoid'</code> のようなパッケージ名の指定を、ブラウザは解決できない</span></li>
+        <li><b>古い環境向けに構文を変換する</b><span class="sub">新しい構文を、対象のブラウザが読める構文に書き換える</span></li>
+        <li><b>配信を効率化する</b><span class="sub">ファイルをまとめてリクエスト数を減らし、使わないコードを削ってサイズを減らす</span></li>
       </ul>
-      <aside class="notes">歴史パート。到達点は「ブラウザに無い機能を補うためにビルドが要る」。</aside>
-    </section>
+      <p>前の3つは「<b>動かすための変換</b>」、最後の1つは「<b>速く届けるための最適化</b>」にあたる。</p>
+    </div>
+    <aside class="notes">IE11 のサポート終了以降、3つ目の比重は下がっている。</aside>
+  </section>
 
-    <!-- 17 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート3 · なぜビルドが必要か" data-time="30–45分">
-      <span class="eyebrow">前提 · 言葉の整理</span>
-      <h2><span class="q">ECMAScript</span> と <span class="q">JavaScript</span></h2>
-      <div class="tablewrap">
-        <table>
-          <thead><tr><th>用語</th><th>指すもの</th></tr></thead>
-          <tbody>
-            <tr><td class="mono">ECMAScript (ES)</td><td>言語仕様そのもの。TC39 という委員会が策定する</td></tr>
-            <tr><td class="mono">JavaScript</td><td>その仕様を実装したもの（V8 など）の通称。実務ではほぼ同義に使う</td></tr>
-            <tr><td class="mono">ES6 = ES2015</td><td>2015年から<b>毎年</b>リリースに。ES6 が2015年版、以降 ES2016・ES2017…</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <p class="eyebrow">「ES2015 の構文」がだいたい指すもの</p>
-      <pre class="code"><span class="k">let</span> / <span class="k">const</span>            <span class="c">// var の置き換え</span>
-() =&gt; {}                <span class="c">// アロー関数</span>
-<span class="k">class</span> X {}             <span class="c">// クラス構文</span>
-<span class="k">const</span> { a, b } = obj   <span class="c">// 分割代入</span>
-<span class="k">import</span> / <span class="k">export</span>       <span class="a">// ← 今日の主役。モジュール</span></pre>
-      <p class="lead">古いブラウザ（IE11 など）はこれらを<span class="em">構文エラー</span>にした。<br>
-        だから長く「新しい構文で書いて、古い書き方に変換して配る」のが必須でした（→ あとで回収）。</p>
-      <aside class="notes">ここは速く流す。<b>「ES2015 ＝ import が言語に入った年」</b>だけ残ればいい。IE11 の話はこのあと transpile のスライドで回収する。</aside>
-    </section>
-
-    <!-- 18 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート3 · なぜビルドが必要か" data-time="30–45分">
-      <span class="eyebrow">① 2010年ごろまで</span>
-      <h2><code class="inline">&lt;script&gt;</code> タグを並べていた時代</h2>
-      <pre class="code"><span class="c">&lt;script src="jquery.js"&gt;&lt;/script&gt;</span>
-<span class="c">&lt;script src="utils.js"&gt;&lt;/script&gt;</span>   <span class="c">// jquery より後でないと動かない</span>
-<span class="c">&lt;script src="app.js"&gt;&lt;/script&gt;</span>     <span class="c">// 順番を間違えると undefined</span></pre>
-      <div class="cards">
-        <div class="card"><span class="tag">問題 1</span><h3>依存の順番を人間が管理する</h3><p>ファイルが増えるほど、正しい並びを知っている人が減っていく。</p></div>
-        <div class="card"><span class="tag">問題 2</span><h3>全部がグローバル変数</h3><p>どのファイルの誰が <code class="inline">window.foo</code> を書き換えたか追えない。</p></div>
-      </div>
-      <p class="lead">対策は IIFE（関数で囲う）や <code class="inline">window.MyApp = {}</code> の名前空間パターン。<br>
-        ファイル数が増えると、この方式は管理が難しくなります。</p>
-      <aside class="notes">IIFE（即時実行関数）や名前空間オブジェクトによる分離が、この時代の定番の回避策。minify 後の出力に IIFE が残るのはその名残。</aside>
-    </section>
-
-    <!-- 19 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート3 · なぜビルドが必要か" data-time="30–45分">
-      <span class="eyebrow">なぜ流儀が乱立しているのか</span>
-      <h2>モジュールシステムの<span class="q">系譜</span>（CommonJS / AMD / UMD / ESM）</h2>
-      <div class="tablewrap">
-        <table>
-          <thead><tr><th>方式</th><th>登場</th><th>構文</th><th>どこ用</th></tr></thead>
-          <tbody>
-            <tr><td class="mono">CommonJS</td><td>2009 · Node.js</td><td class="mono">require() / module.exports</td><td>サーバー</td></tr>
-            <tr><td class="mono">AMD</td><td>2011 · RequireJS</td><td class="mono">define([deps], factory)</td><td>ブラウザ（非同期）</td></tr>
-            <tr><td class="mono">UMD</td><td>2011頃</td><td>上2つ＋グローバルを全部書いた定型</td><td>配布ライブラリ</td></tr>
-            <tr><td class="mono">ESM</td><td><b>2015 · 言語仕様</b></td><td class="mono">import / export</td><td>言語標準（今の前提）</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <ul class="points">
-        <li class="key"><b>ESM だけが「静的」</b> — <code class="inline">import</code> は必ずファイル先頭。<code class="inline">if</code> の中には書けない</li>
-        <li>だからバンドラは<span class="em">コードを実行せずに</span>依存グラフを解析できる → tree shaking の前提</li>
+  <!-- 08 なぜバンドルするのか -->
+  <section class="slide">
+    <h2 class="title">2. ブラウザは import を読めるのに、なぜバンドルするのか</h2>
+    <div class="body">
+      <div class="fig"><svg preserveAspectRatio="xMinYMid meet" viewBox="0 0 900 200" role="img" aria-label="バンドルしない場合のリクエストのウォーターフォール。main.js を読み終えるまで counter.js の存在が分からず、counter.js を読み終えるまで utils.js が分からない、という具合に階段状に待ちが積み重なる">
+          <text x="10" y="22" class="svg-t sm">バンドルしない場合のリクエストの流れ（時間 →）</text>
+          <text x="10" y="58" class="svg-t mono">main.js</text>
+          <rect x="130" y="44" width="150" height="20" rx="3" class="svg-fill-s"/>
+          <text x="10" y="92" class="svg-t mono">counter.js</text>
+          <rect x="290" y="78" width="150" height="20" rx="3" class="svg-fill-s"/>
+          <text x="10" y="126" class="svg-t mono">utils.js</text>
+          <rect x="450" y="112" width="150" height="20" rx="3" class="svg-fill-s"/>
+          <text x="10" y="160" class="svg-t mono">…</text>
+          <rect x="610" y="146" width="150" height="20" rx="3" class="svg-fill-s"/>
+          <text x="770" y="162" class="svg-t a" font-size="12">× 数百〜数千</text>
+          <text x="290" y="190" class="svg-t sm">各ファイルの取得完了後に次の import 先が判明するため、待ち時間が段階的に累積する</text>
+        </svg></div>
+      <ul>
+        <li><b>パッケージ名を解決できない</b>：<code class="inline">'nanoid'</code> がどのファイルかをブラウザは知らない → ファイルを特定する処理が必要</li>
+        <li><b>リクエストの待ち時間が積み重なる</b>：ネットワーク越しでは遅くなる → ファイルをまとめる処理が必要</li>
       </ul>
-      <aside class="notes">個々の方式の詳細は暗記不要。要点は「2015 年以前は言語仕様にモジュールが無く、各コミュニティが独自方式を用いていた」こと。</aside>
-    </section>
+    </div>
+    <aside class="notes">現在のブラウザは ES Modules（import / export）をそのまま読める。それでもバンドルする理由は、この2つに集約される。なお、Vite の開発サーバーはバンドルしていない（パート3で回収する）。</aside>
+  </section>
 
-    <!-- 20 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート3 · なぜビルドが必要か" data-time="30–45分">
-      <span class="eyebrow">② 2009年 · CommonJS</span>
-      <h2>CommonJS による<span class="q">依存解決</span></h2>
-      <pre class="code"><span class="k">const</span> utils = <span class="a">require</span>(<span class="a">'./utils'</span>);
-module.exports = { foo };</pre>
-      <ul class="points">
-        <li>依存を<b>書いた場所で宣言する</b>ので、並び順を人間が管理しなくてよくなった</li>
-        <li>モジュールごとにスコープが閉じるので、グローバルが汚れない</li>
-        <li class="key">ただしこれは <b>Node.js のための仕様</b>。<span class="em">ブラウザに <code class="inline">require</code> は存在しない</span></li>
-      </ul>
-      <p class="pull">「Node で書けるあの書き方を、ブラウザでもやりたい」</p>
-      <aside class="notes">CommonJS がブラウザで動かない、という点が次のスライド（バンドラの成り立ち）の起点になる。</aside>
-    </section>
-
-    <!-- 21 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート3 · なぜビルドが必要か" data-time="30–45分">
-      <span class="kicker">バンドラの成り立ち</span>
-      <h2>バンドラの<span class="q">成り立ち</span></h2>
-      <p class="lead">browserify（2011） → <b>webpack（2012）</b></p>
-      <p class="pull">バンドラは「まとめる道具」ではなく、<br>
-        ブラウザに<span class="em">無いモジュールシステム</span>を、<br>
-        ビルド時に<span class="em">自前で埋め込む</span>道具。</p>
-      <p class="lead">「複数ファイルが1つになる」のは、この目的を達成した<b>結果</b>にすぎません。<br>
-        ——これをパート5で、実物のコードとして読みます。</p>
-      <aside class="notes">パート5の <code>__webpack_require__</code> への伏線。「あとで本物を見せます」と予告しておくと、聞き手が待ってくれる。</aside>
-    </section>
-
-    <!-- 22 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート3 · なぜビルドが必要か" data-time="30–45分">
-      <span class="eyebrow">③ 2015年仕様 / 2017年ブラウザ実装</span>
-      <h2>ESM 標準化後も<span class="q">バンドラが必要な理由</span></h2>
-      <pre class="code"><span class="k">import</span> { foo } <span class="k">from</span> <span class="a">'./utils.js'</span>;
-<span class="k">export const</span> bar = 1;</pre>
-      <p class="lead">ようやく言語仕様としてのモジュールが来ました。<br>
-        <span class="em">それでも要ります。</span>理由は次の4つ。</p>
-      <ul class="points">
-        <li class="key">パッケージ名を解決できない（← <b>これは今も誰かがやるしかない</b> → 次のスライド）</li>
-        <li>リクエスト数が急増する</li>
-        <li>JS 以外を import できない</li>
-        <li>最適化されない（← <b>この先の transpile のスライド</b>）</li>
-      </ul>
-      <p class="lead">ただし ESM の登場で、<b>「開発中はバンドルしない」という選択肢</b>が生まれました。これがパート1で見た Vite の開発サーバーの前提です。</p>
-      <aside class="notes">ここで2本目の伏線。<b>ESM が来たから Vite が可能になった</b>、という因果が、パート1で見た Vite の設計の背景。</aside>
-    </section>
-
-    <!-- 23 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート3 · なぜビルドが必要か" data-time="30–45分">
-      <span class="eyebrow">④ 2010年〜 · npm</span>
-      <h2><span class="q">npm</span> と bare specifier の解決</h2>
-      <pre class="code"><span class="a">npm install</span>
-  ├─ node_modules/       <span class="c">// パッケージの実体</span>
-  ├─ package.json        <span class="c">// 何を使うかの宣言（main / exports / type）</span>
-  └─ package-lock.json   <span class="c">// 固定バージョン</span></pre>
-      <ul class="points">
-        <li>パッケージの入口は <code class="inline">package.json</code> の <code class="inline">main</code> / <code class="inline">exports</code> で決まる</li>
-        <li class="key"><b>ブラウザはこの探索をしない。</b><code class="inline">'nanoid'</code> → 実ファイル、を誰かが解決するしかない</li>
-        <li>その「誰か」＝ バンドラ ／ Vite の事前バンドル。<span class="schema-em">ブラウザ単体では解決できない</span></li>
-      </ul>
-      <p class="lead">npm / yarn / pnpm が並立するのも歴史。<b>yarn（2016）</b>は当時の npm の遅さと lockfile 不在への不満、
-        <b>pnpm</b> は <code class="inline">node_modules</code> の重複排除が動機です。</p>
-      <aside class="notes">「ブラウザに <code>node_modules</code> 探索は無い」と「Vite が dev で実パスに書き換える（パート1で見た）」を繋ぐ結び目。<b>「毎日書いてる bare import は、node_modules という仕組みに乗っている」</b>と一言。</aside>
-    </section>
-
-    <!-- 24 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート3 · なぜビルドが必要か" data-time="30–45分">
-      <span class="eyebrow">⑤ 2015〜2021年ごろ · Babel 全盛</span>
-      <h2><span class="q">トランスパイル</span>（Babel）の役割の変遷</h2>
-      <pre class="code"><span class="k">const</span> add = (a, b) =&gt; a + b;
-<span class="c">// ↓ Babel が古いブラウザ向けに変換</span>
-<span class="k">var</span> add = <span class="k">function</span> (a, b) { <span class="k">return</span> a + b; };</pre>
-      <ul class="points">
-        <li>新しい構文で書きたい、でも IE11 は構文エラーにする → <b>ES2015→ES5 変換が必須の時代</b></li>
-        <li class="key"><b>IE のサポートが2022年に終了</b> → 「ES5 に落とす」設定は多くの現場で不要に</li>
-        <li>今 transpile が残る主用途は <span class="em">TypeScript → JS</span> と <span class="em">JSX → JS</span></li>
-      </ul>
-      <p class="pull">transpile ＝ <span class="em">構文</span>の変換。<br>
-        polyfill ＝ 存在しない <span class="em">API</span> を実装で埋める。別物です。</p>
-      <aside class="notes">用語としての transpile / bundle / polyfill の整理は<b>パート4でやる</b>。ここは「Babel はなぜ生まれ、なぜ影が薄くなったか」という歴史に絞る。Babel 自体も今は SWC / Oxc に置き換わりつつある、と一言。</aside>
-    </section>
-
-    <!-- 25 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート3 · なぜビルドが必要か" data-time="30–45分">
-      <span class="eyebrow">パート3 まとめ</span>
-      <h2>年表：<span class="q">ビルドツールの変遷</span></h2>
-      <div class="tablewrap">
-        <table>
-          <thead><tr><th>年</th><th>出来事</th><th>効いたこと</th></tr></thead>
-          <tbody>
-            <tr><td class="mono">2009</td><td>Node.js ＋ CommonJS</td><td><code class="inline">require</code> の書き方が広まる</td></tr>
-            <tr><td class="mono">2010</td><td>npm</td><td>パッケージ配布のインフラ</td></tr>
-            <tr><td class="mono">2011</td><td>browserify / RequireJS</td><td>「require をブラウザで」</td></tr>
-            <tr><td class="mono">2012</td><td><b>webpack</b></td><td>loader で CSS・画像もモジュール化</td></tr>
-            <tr><td class="mono">2015</td><td><b>ES2015</b>：ESM を言語仕様に ／ Babel 全盛</td><td><code class="inline">import</code> 誕生。ただし実装が追いつかず変換必須</td></tr>
-            <tr><td class="mono">2017</td><td>主要ブラウザが ESM を実装</td><td>ネイティブで <code class="inline">import</code> が動く</td></tr>
-            <tr><td class="mono">2020</td><td><b>Vite</b> / esbuild が普及</td><td>「開発中はバンドルしない」</td></tr>
-            <tr><td class="mono">2022</td><td>IE 11 サポート終了</td><td>ES5 へのダウンレベルがほぼ不要に</td></tr>
-            <tr><td class="mono">2023〜</td><td>SWC / Oxc / Rolldown / Rspack</td><td>ツールの中身が JS → Rust / Go へ</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <p class="pull">道具は「壊れていたものを直す」ために積み上がった。<br>
-        だから設定項目には、必ず<span class="em">直したかった何か</span>がある。</p>
-      <aside class="notes">パート3の締め。<b>全部覚えなくていい、この流れの"形"だけ</b>。次のパート4で「では道具は実際に何をやっているのか」に入る、と繋ぐ。詳細版は <code>docs/js-background.md</code> にある、と案内。</aside>
-    </section>
-
-    <!-- 26 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート4 · ビルドの5工程" data-time="45–52分">
-      <span class="eyebrow">全ツール共通の骨格</span>
-      <h2>ビルドの<span class="q">5工程</span></h2>
-      <figure>
-        <div class="figscroll">
-        <svg viewBox="0 0 1000 250" role="img" aria-label="ビルドの5工程。エントリから Resolve・Load・Transform を繰り返して依存グラフを作り、Optimize と Emit でグラフ全体を出力する流れ図" style="min-width:640px">
+  <!-- 09 5工程 -->
+  <section class="slide">
+    <h2 class="title">2. ビルドツールに共通する5つの工程</h2>
+    <div class="body">
+      <div class="fig"><svg preserveAspectRatio="xMinYMid meet" viewBox="0 0 1000 250" role="img" aria-label="ビルドの5工程。エントリから Resolve・Load・Transform を繰り返して依存グラフを作り、Optimize と Emit でグラフ全体を出力する流れ図">
           <defs>
             <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
               <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
@@ -1013,322 +419,344 @@ module.exports = { foo };</pre>
             </marker>
           </defs>
 
-          <!-- 繰り返しの弧 -->
-          <path d="M 400 66 C 400 26, 150 26, 150 66" class="svg-line-a" marker-end="url(#ar-a)"/>
-          <text x="275" y="24" text-anchor="middle" class="svg-t a" font-size="11.5">import を見つけるたびに繰り返す</text>
+          <path d="M 560 66 C 560 20, 190 20, 190 66" class="svg-line-a" marker-end="url(#ar-a)"/>
+          <text x="375" y="24" text-anchor="middle" class="svg-t a" font-size="11.5">変換後のコードに含まれる import を起点に反復する</text>
 
-          <!-- entry -->
           <rect x="8" y="76" width="98" height="56" rx="2" class="svg-box-2"/>
           <text x="57" y="99" text-anchor="middle" class="svg-t" font-size="11.5">エントリ</text>
-          <text x="57" y="116" text-anchor="middle" class="svg-t mono">main.js</text>
+          <text x="57" y="116" text-anchor="middle" class="svg-t mono">index.html</text>
           <line x1="108" y1="104" x2="128" y2="104" class="svg-line" marker-end="url(#ar)"/>
 
-          <!-- 5 stages -->
           <rect x="130" y="76" width="140" height="56" rx="2" class="svg-box"/>
           <text x="200" y="100" text-anchor="middle" class="svg-t hd">① Resolve</text>
-          <text x="200" y="118" text-anchor="middle" class="svg-t sm">どのファイル？</text>
+          <text x="200" y="118" text-anchor="middle" class="svg-t sm">参照先の特定</text>
           <line x1="272" y1="104" x2="288" y2="104" class="svg-line" marker-end="url(#ar)"/>
 
           <rect x="290" y="76" width="140" height="56" rx="2" class="svg-box"/>
           <text x="360" y="100" text-anchor="middle" class="svg-t hd">② Load</text>
-          <text x="360" y="118" text-anchor="middle" class="svg-t sm">読む</text>
+          <text x="360" y="118" text-anchor="middle" class="svg-t sm">内容の読み込み</text>
           <line x1="432" y1="104" x2="448" y2="104" class="svg-line" marker-end="url(#ar)"/>
 
           <rect x="450" y="76" width="140" height="56" rx="2" class="svg-box"/>
           <text x="520" y="100" text-anchor="middle" class="svg-t hd">③ Transform</text>
-          <text x="520" y="118" text-anchor="middle" class="svg-t sm">TS→JS, CSS→JS</text>
+          <text x="520" y="118" text-anchor="middle" class="svg-t sm">JS への変換</text>
           <line x1="592" y1="104" x2="608" y2="104" class="svg-line" marker-end="url(#ar)"/>
 
           <rect x="610" y="76" width="140" height="56" rx="2" class="svg-box"/>
           <text x="680" y="100" text-anchor="middle" class="svg-t hd">④ Optimize</text>
-          <text x="680" y="118" text-anchor="middle" class="svg-t sm">tree shaking, minify</text>
+          <text x="680" y="118" text-anchor="middle" class="svg-t sm">結合・最適化</text>
           <line x1="752" y1="104" x2="768" y2="104" class="svg-line" marker-end="url(#ar)"/>
 
           <rect x="770" y="76" width="140" height="56" rx="2" class="svg-box"/>
           <text x="840" y="100" text-anchor="middle" class="svg-t hd">⑤ Emit</text>
-          <text x="840" y="118" text-anchor="middle" class="svg-t sm">ファイルを書く</text>
+          <text x="840" y="118" text-anchor="middle" class="svg-t sm">ファイル出力</text>
           <line x1="912" y1="104" x2="932" y2="104" class="svg-line" marker-end="url(#ar)"/>
 
           <rect x="934" y="76" width="58" height="56" rx="2" class="svg-box-2"/>
           <text x="963" y="109" text-anchor="middle" class="svg-t mono">dist/</text>
 
-          <!-- 括り -->
           <path d="M 130 152 L 130 164 L 590 164 L 590 152" class="svg-rule" fill="none"/>
-          <text x="360" y="184" text-anchor="middle" class="svg-t s" font-size="12">1モジュールずつ、依存グラフができるまで繰り返す</text>
+          <text x="360" y="184" text-anchor="middle" class="svg-t s" font-size="12">モジュール単位で、依存グラフが完成するまで反復</text>
 
           <path d="M 610 152 L 610 164 L 910 164 L 910 152" class="svg-rule" fill="none"/>
-          <text x="760" y="184" text-anchor="middle" class="svg-t s" font-size="12">グラフ全体をまとめて処理する</text>
+          <text x="760" y="184" text-anchor="middle" class="svg-t s" font-size="12">グラフ全体を一括で処理</text>
 
-          <!-- 設定キー -->
-          <text x="200" y="220" text-anchor="middle" class="svg-t mono">resolve.alias</text>
-          <text x="360" y="220" text-anchor="middle" class="svg-t mono">（plugin）</text>
-          <text x="520" y="220" text-anchor="middle" class="svg-t mono">module.rules</text>
-          <text x="680" y="220" text-anchor="middle" class="svg-t mono">optimization.*</text>
-          <text x="840" y="220" text-anchor="middle" class="svg-t mono">output.*</text>
-          <text x="500" y="242" text-anchor="middle" class="svg-t sm">↑ webpack の設定項目は、この5工程のどこかに必ず対応している</text>
-        </svg>
-        </div>
-        <figcaption>ツールが違っても骨格は同じ。設定ファイルを読むときは「この項目は5工程のどこか」を考えると迷わない。</figcaption>
-      </figure>
-      <aside class="notes">この図が全体の見取り図。以降の用語はすべてこの 5 工程のいずれかに対応する。既存プロジェクトの設定項目がどの工程に当たるかを対応づけると理解しやすい。</aside>
-    </section>
-
-    <!-- 27 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート4 · ビルドの5工程" data-time="45–52分">
-      <span class="kicker">5工程で見る</span>
-      <h2>5工程で見る<span class="q">開発サーバーと本番ビルド</span></h2>
-      <div class="tablewrap">
-        <table>
-          <thead><tr><th>工程</th><th>開発サーバー（<code class="inline">vite</code>）</th><th>本番ビルド（<code class="inline">vite build</code>）</th></tr></thead>
-          <tbody>
-            <tr><td>① Resolve</td><td>リクエストのたびに1つずつ。bare → <code class="inline">/node_modules/.vite/deps/…</code> に書き換え</td><td>依存グラフを<b>一括で</b>解決</td></tr>
-            <tr><td>② Load</td><td>要求されたファイルだけ読む</td><td>グラフ上の全モジュールを読む</td></tr>
-            <tr><td>③ Transform</td><td>要求された分だけその場で（TS/JSX、CSS）</td><td>全モジュールを変換</td></tr>
-            <tr><td>④ Optimize</td><td class="mono">— やらない（ブラウザにそのまま渡す）</td><td>tree shaking / minify / code splitting</td></tr>
-            <tr><td>⑤ Emit</td><td class="mono">— 書き出さない（HTTP レスポンスで返す）</td><td><code class="inline">dist/</code> にハッシュ名で書く ＋ <code class="inline">index.html</code> に <code class="inline">&lt;link&gt;</code> 注入</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <ul class="points">
-        <li class="key"><b>dev は ④⑤ をまるごと飛ばし、①②③ を「必要な分だけ」遅延実行</b></li>
-        <li><b>build は 5工程を、依存グラフ全体に一気にかける</b></li>
+          <text x="200" y="222" text-anchor="middle" class="svg-t mono">resolveId</text>
+          <text x="360" y="222" text-anchor="middle" class="svg-t mono">load</text>
+          <text x="520" y="222" text-anchor="middle" class="svg-t mono">transform</text>
+          <text x="680" y="222" text-anchor="middle" class="svg-t mono">renderChunk</text>
+          <text x="840" y="222" text-anchor="middle" class="svg-t mono">generateBundle</text>
+          <text x="520" y="244" text-anchor="middle" class="svg-t sm">↑ 各工程に対応する Vite（Rollup / Rolldown）プラグインのフック名</text>
+        </svg></div>
+      <ul>
+        <li>①〜③ は import を見つけるたびに繰り返され、その結果「依存グラフ」ができあがる</li>
+        <li>Vite だけでなく、webpack や esbuild も同じ骨格で動いている</li>
       </ul>
-      <p class="pull">7 → 8 では、③ Transform と ④ Optimize のエンジン、および開発時の事前バンドルのエンジンが置き換わりました。</p>
-      <aside class="notes">「開発サーバーがなぜ速いか」＝ ④⑤ を行わないから、と一言で言えるように。</aside>
-    </section>
+    </div>
+    <aside class="notes">今回最も持ち帰ってほしい図。下の段は、Vite のプラグインが処理を差し込む場所（フック）の名前を示す。</aside>
+  </section>
 
-    <!-- 28 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート4 · ビルドの5工程" data-time="45–52分">
-      <span class="eyebrow">混同しやすい用語</span>
-      <h2>用語の整理：<span class="q">transpile / bundle / minify</span> ほか</h2>
-      <div class="cards">
-        <div class="card"><span class="tag">工程 ③</span><h3>transpile（変換）</h3>
-          <p>構文を別の構文に書き換える。TS→JS、ES2022→ES2015。<br><b>ファイルの数は変わらない。</b></p></div>
-        <div class="card mark"><span class="tag">工程 ①②</span><h3>bundle（結合）</h3>
-          <p>依存を辿って複数ファイルを束ねる。<br><b>ファイルの数が減る。</b></p></div>
-      </div>
-      <p class="lead">esbuild の設定で <code class="inline">bundle: false</code> にすると、<code class="inline">import</code> 文が
-        <span class="em">そのまま出力に残ります</span>。変換だけして、依存は辿っていない状態です。</p>
-      <div class="tablewrap">
-        <table>
-          <thead><tr><th>用語</th><th>意味</th><th>混同しやすい相手</th></tr></thead>
-          <tbody>
-            <tr><td class="mono">polyfill</td><td>存在しない<b>API</b>を実装で埋める（<code class="inline">Promise</code>, <code class="inline">fetch</code>）</td><td>transpile（あちらは構文の話）</td></tr>
-            <tr><td class="mono">tree shaking</td><td>どこからも使われない export を落とす</td><td>minify（あちらは縮めるだけ）</td></tr>
-            <tr><td class="mono">code splitting</td><td>出力を複数ファイルに分ける。動的 import が起点</td><td>bundle（逆向きの操作）</td></tr>
-            <tr><td class="mono">HMR</td><td><b>状態を保ったまま</b>変わったモジュールだけ差し替え</td><td>live reload（ページごと再読込）</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <aside class="notes">tree shaking の補足：<b>ESM の静的解析が前提</b>。<code>require()</code> や <code>import * as _</code> だと効かない。「バンドルが妙に大きい」の原因の大半がこれ。</aside>
-    </section>
-
-    <!-- 29 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート5 · ツールの内部構造" data-time="52–68分">
-      <span class="kicker">webpack の出力 ①</span>
-      <h2>webpack の出力①：<span class="q">モジュールの登録</span></h2>
-      <pre class="code"><span class="c">// dist/main.js の冒頭（development ビルド＝minify なし）</span>
-<span class="k">var</span> __webpack_modules__ = ({
-
-  <span class="a">"./src/counter.js"</span>: ((module, exports, __webpack_require__) =&gt; { <span class="c">/* … */</span> }),
-
-  <span class="a">"./src/utils.js"</span>:   ((module, exports, __webpack_require__) =&gt; { <span class="c">/* … */</span> })
-
-});</pre>
-      <ul class="points">
-        <li class="key"><b>各モジュールが「関数」に包まれ、パスをキーにしたオブジェクトに登録されている</b></li>
-        <li>関数の中なので、変数はグローバルに漏れない → <span class="schema-em">script タグ時代の「問題2」の解決</span></li>
+  <!-- 10 AST -->
+  <section class="slide">
+    <h2 class="title">2. 前提となる言葉：AST と依存グラフ</h2>
+    <div class="body">
+      <ul>
+        <li><b>AST（抽象構文木）</b><span class="sub">ソースコードを木構造のデータにしたもの。文字列のままでは変換も解析もできないため、まず構文解析（parse）して AST にする</span></li>
+        <li><b>依存グラフ</b><span class="sub">どのファイルがどのファイルを import しているかの関係。AST から import を見つけ、その先を辿ることでできる</span></li>
       </ul>
-      <aside class="notes">各モジュールがファイルパスをキーとする関数として登録されている点を確認する。関数スコープにより変数がグローバルに漏れない。</aside>
-    </section>
+      <pre class="code"><span class="k">import</span> { a } <span class="k">from</span> <span class="a">'./a.js'</span>
+<span class="c">  ↓ parse</span>
+ImportDeclaration { specifiers: [a], source: <span class="a">'./a.js'</span> }   <span class="c">← 次に読むファイルが分かる</span></pre>
+      <p>変換も tree shaking も圧縮も、すべて AST の上で行う。<span class="em">parse は負荷が大きく</span>、パート3の答えにも関係する。</p>
+    </div>
+    <aside class="notes">AST は Abstract Syntax Tree の略。</aside>
+  </section>
 
-    <!-- 30 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート5 · ツールの内部構造" data-time="52–68分">
-      <span class="kicker">webpack の出力 ②</span>
-      <h2>webpack の出力②：<code class="inline">__webpack_require__</code></h2>
-      <pre class="code"><span class="k">function</span> <span class="a">__webpack_require__</span>(moduleId) {
-<span class="hl">  <span class="c">// キャッシュにあれば、それを返す</span></span>
-<span class="hl">  <span class="k">const</span> cached = __webpack_module_cache__[moduleId];</span>
-<span class="hl">  <span class="k">if</span> (cached !== undefined) <span class="k">return</span> cached.exports;</span>
+  <!-- 11 Resolve -->
+  <section class="slide">
+    <h2 class="title">2-① Resolve：書かれた名前から実際のファイルを特定する</h2>
+    <div class="body">
+      <pre class="code"><span class="k">import</span> { setupCounter } <span class="k">from</span> <span class="a">'./counter.js'</span>;   <span class="c">// 相対パス</span>
+<span class="k">import</span> { nanoid }       <span class="k">from</span> <span class="a">'nanoid'</span>;         <span class="c">// パッケージ名（bare specifier）</span>
 
-  <span class="k">const</span> module = __webpack_module_cache__[moduleId] = { id: moduleId, exports: {} };
-
-<span class="hl">  <span class="c">// 登録されている関数を実行し、exports を埋めさせる</span></span>
-<span class="hl">  __webpack_modules__[moduleId](module, module.exports, __webpack_require__);</span>
-
-  <span class="k">return</span> module.exports;
-}</pre>
-      <p class="pull">これは、Node の <code class="inline">require</code> を<br>ブラウザ用に再実装した関数です。</p>
-      <aside class="notes">確認点：①モジュールをキャッシュする ②初回のみ実行する ③ module.exports を返す。これは Node.js の require の挙動と同じ。</aside>
-    </section>
-
-    <!-- 31 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート5 · ツールの内部構造" data-time="52–68分">
-      <span class="kicker">まとめ · バンドラの役割</span>
-      <h2>バンドラの役割：<span class="q">モジュールシステムの埋め込み</span></h2>
-      <p class="pull">ブラウザに無いモジュールシステムを、<br>
-        <span class="em">自前の関数として出力に埋め込んでいる。</span></p>
-      <ul class="points">
-        <li class="key">webpack は <b>2012年生まれ</b>。当時のブラウザには ESM が無かったので、こうするしかなかった</li>
-        <li>esbuild や Vite の出力（ESM形式）には、この関数は<b>ありません</b></li>
-        <li>ブラウザが ESM を理解するようになり、<span class="em">ランタイムを埋め込む必要が無くなった</span>ため</li>
-        <li>webpack 5 も <code class="inline">output.module: true</code> で ESM 出力ができます</li>
+<span class="c">// Resolve の結果</span>
+<span class="a">'./counter.js'</span>  →  /project/src/counter.js
+<span class="a">'nanoid'</span>        →  /project/node_modules/nanoid/<span class="hl">index.browser.js</span></pre>
+      <ul>
+        <li>nanoid は package.json の <code class="inline">exports</code> でブラウザ向けのファイルを指定しているため、index.browser.js に解決される</li>
+        <li><b>実務では</b>：<code class="inline">Failed to resolve import</code> はこの工程で発生する。<code class="inline">@/</code> のような <code class="inline">resolve.alias</code> もこの工程に作用する</li>
       </ul>
-      <aside class="notes">パート3「バンドラの成り立ち」をここで回収。「バンドラ＝まとめる道具、という説明では、なぜ ESM 時代に形が変わったのか説明できない」と言うと差が立つ。</aside>
-    </section>
+    </div>
+    <aside class="notes">本番ビルドではソースの import 文を書き換えず、どのファイルかを確定させるだけにとどめる。最終的にはバンドルされ、import 文自体がなくなる。</aside>
+  </section>
 
-    <!-- 32 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート5 · ツールの内部構造" data-time="52–68分">
-      <span class="eyebrow">loader という考え方</span>
-      <h2><span class="q">loader / plugin</span> という仕組み</h2>
-      <pre class="code">use: [ <span class="a">MiniCssExtractPlugin.loader</span>, <span class="a">'css-loader'</span> ]
-       <span class="c">↑ ②番目に実行         ↑ ①番目に実行（配列の末尾から先頭へ）</span></pre>
-      <ol class="steps">
-        <li><b>css-loader</b> — CSS を読んで <code class="inline">@import</code> / <code class="inline">url()</code> を解決し、<b>JS モジュールに変換</b></li>
-        <li><b>MiniCssExtractPlugin.loader</b> — それを <code class="inline">.css</code> ファイルとして書き出す<br>
-          <span style="color:var(--ink-soft)">（開発時は <code class="inline">style-loader</code> が <code class="inline">&lt;style&gt;</code> タグとして注入）</span></li>
+  <!-- 12 Load -->
+  <section class="slide">
+    <h2 class="title">2-② Load：ファイルの中身を読み込む</h2>
+    <div class="body">
+      <ul>
+        <li><b>普通のファイル</b><span class="sub"><code class="inline">main.ts</code>・<code class="inline">style.css</code>・<code class="inline">App.vue</code> 等をディスクから読む。この時点ではまだ JavaScript ではない</span></li>
+        <li><b>仮想モジュール</b><span class="sub">ディスクに存在しないモジュール。ビルド日時やルート一覧などを、プラグインがその場で作って返す</span></li>
+        <li><b>画像・フォント等</b><span class="sub">読み込んだ後、次の工程で「URL を export する JavaScript」に変換される</span></li>
+        <li><b>実務では</b>：<code class="inline">import routes from 'virtual:routes'</code> のように、ファイルがないのに import できるのはこの仕組みによる</li>
+      </ul>
+    </div>
+    <aside class="notes">Nuxt 等のファイルベースルーティングも、この仕組みを応用している。</aside>
+  </section>
+
+  <!-- 13 Transform -->
+  <section class="slide">
+    <h2 class="title">2-③ Transform：JavaScript に変換する</h2>
+    <div class="body">
+      <table>
+        <thead><tr><th style="width:24%">入力</th><th>処理</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">.ts / .tsx</td><td>型情報を取り除いて JavaScript にする</td></tr>
+          <tr><td class="mono">.jsx</td><td>JSX を関数呼び出しに変換する</td></tr>
+          <tr><td class="mono">.vue / .svelte</td><td>各フレームワークのプラグインが変換する</td></tr>
+          <tr><td class="mono">.css</td><td>JavaScript モジュールにする（開発時は &lt;style&gt; として注入、本番は ⑤ で .css に取り出す）</td></tr>
+          <tr><td class="mono">.json / 画像</td><td><code class="inline">export default …</code> の形にする</td></tr>
+        </tbody>
+      </table>
+      <ul>
+        <li>変換したコードを parse して import を見つけ、① Resolve に戻る</li>
+        <li><b>実務では</b>：<span class="em">ビルドツールは型チェックをしない</span>。型エラーがあってもビルドは通るため、<code class="inline">tsc --noEmit</code> を別に実行する必要がある</li>
+      </ul>
+    </div>
+    <aside class="notes">esbuild や Oxc が速い理由の1つは、型チェックをしないことにある。</aside>
+  </section>
+
+  <!-- 14 Optimize -->
+  <section class="slide">
+    <h2 class="title">2-④ Optimize：まとめて、削って、分ける</h2>
+    <div class="body">
+      <ul>
+        <li><b>bundle（結合）</b>：モジュールを1つのスコープにまとめ、名前がぶつかる変数をリネームする</li>
+        <li><b>tree shaking</b>：依存グラフ全体を見て、どこからも使われていない export を削る</li>
+        <li><b>code splitting（分割）</b>：動的 import（<code class="inline">import()</code>）の先や共通部分を別ファイルに分ける</li>
+        <li><b>minify（圧縮）</b>：変数名を短くし、空白を消す。1ファイルの中で完結する処理</li>
+        <li>minify 以外は<span class="em">依存グラフ全体</span>を見る必要があるため、モジュール数が増えるほど重くなる</li>
+        <li><b>実務では</b>：tree shaking は import / export の静的な解析を前提とする。<code class="inline">require()</code> や CommonJS のパッケージでは効かず、バンドルが大きくなる原因になる</li>
+      </ul>
+    </div>
+    <aside class="notes">tree shaking はグラフ全体を、minify は1ファイルを対象とする。見ている範囲が違う。</aside>
+  </section>
+
+  <!-- 15 Emit -->
+  <section class="slide">
+    <h2 class="title">2-⑤ Emit：ファイルに書き出す</h2>
+    <div class="body">
+      <pre class="code">dist/
+├─ index.html              <span class="c">← script / link のパスを書き換え済み</span>
+└─ assets/
+   ├─ index-<span class="a">Bx43ohxV</span>.js     <span class="c">← エントリ</span>
+   ├─ index-<span class="a">BBFHx35T</span>.css    <span class="c">← ③で JavaScript にした CSS を取り出したもの</span>
+   ├─ heavy-<span class="a">CuXC7Vo8</span>.js     <span class="c">← 動的 import で分割されたファイル</span>
+   └─ *.js.map              <span class="c">← ソースマップ</span></pre>
+      <ul>
+        <li><code class="inline">index.html</code> は、ハッシュ付きのファイル名を読み込むように書き換えられる</li>
+        <li><b>実務では</b>：ハッシュは中身から計算されるため、中身が変わればファイル名も変わる。そのためブラウザのキャッシュを長く設定しても問題が起きない</li>
+      </ul>
+    </div>
+    <aside class="notes">ソースマップは、圧縮後のコードの位置と元のコードの位置を対応づけるもので、本番のエラー調査で使う。ここでパート2は終わり。「では、この5工程の視点で Vite 8 を見直してみる」とつなぐ。</aside>
+  </section>
+
+  <!-- 16 7→8 を5工程で見る -->
+  <section class="slide">
+    <h2 class="title">3. Vite 7 → 8 の変化を5工程で見直す</h2>
+    <div class="body">
+      <table>
+        <thead><tr><th>工程</th><th style="width:24%">Vite 7</th><th style="width:28%">Vite 8</th></tr></thead>
+        <tbody>
+          <tr><td>①② Resolve / Load（依存グラフを作る）</td><td class="mono">Rollup（JS）</td><td class="mono"><b>Rolldown（Rust）</b></td></tr>
+          <tr><td>③ Transform（TS / JSX）</td><td class="mono">esbuild（Go）</td><td class="mono"><b>Oxc（Rust）</b></td></tr>
+          <tr><td>④ Optimize（bundle / tree shaking / split）</td><td class="mono">Rollup（JS）</td><td class="mono"><b>Rolldown（Rust）</b></td></tr>
+          <tr><td>④ minify（JS / CSS）</td><td class="mono">esbuild / esbuild</td><td class="mono"><b>Oxc / Lightning CSS</b></td></tr>
+          <tr><td>⑤ Emit</td><td class="mono">Rollup（JS）</td><td class="mono"><b>Rolldown（Rust）</b></td></tr>
+        </tbody>
+      </table>
+      <ul>
+        <li>工程そのものは何も変わっていない。<span class="em">各工程を実行するツールだけが入れ替わった</span></li>
+        <li>では、なぜツールを入れ替えると速くなるのか。理由は大きく2つある</li>
+      </ul>
+    </div>
+    <aside class="notes">パート1で見た表を、工程の単位で並べ直した。</aside>
+  </section>
+
+  <!-- 17 並列処理 -->
+  <section class="slide">
+    <h2 class="title">3. 速くなった理由 1：①〜③ を並列に処理できる</h2>
+    <div class="body">
+      <ul>
+        <li><b>①〜③ はファイルごとに独立した処理</b><span class="sub">ファイルの特定・読み込み・変換を繰り返すだけで、ファイル同士がお互いを待つ必要がない</span></li>
+        <li><b>Vite 7（Rollup）：JavaScript で、基本1スレッド</b><span class="sub">約 6,900 個のファイルを、1本のスレッドで順番に処理していた</span></li>
+        <li><b>Vite 8（Rolldown）：Rust で、複数スレッド</b><span class="sub">ファイルごとの処理を、CPU の複数のコアで同時に進める</span></li>
+      </ul>
+      <p>工程の性質が分かっていれば、<span class="em">どこが並列化で速くなるか</span>が見えてくる。</p>
+    </div>
+    <aside class="notes">測定には 8 コアのマシンを使った。④ の tree shaking などはグラフ全体を見るため、①〜③ ほど単純には並列化できない。</aside>
+  </section>
+
+  <!-- 18 parse の重複 -->
+  <section class="slide">
+    <h2 class="title">3. 速くなった理由 2：重い parse を何度もしなくなった</h2>
+    <div class="body">
+      <div class="fig"><svg preserveAspectRatio="xMinYMid meet" viewBox="0 0 960 300" role="img" aria-label="Vite 7 はツールをまたぐたびにコードを文字列で渡し、受け取った側がもう一度 parse していた。Vite 8 は Rust の中で1つの AST を使い回す">
+          <defs>
+            <marker id="ar3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+            </marker>
+          </defs>
+
+          <text x="10" y="24" class="svg-t hd">Vite 7（TS ファイルの場合）</text>
+          <rect x="10" y="40" width="80" height="60" rx="2" class="svg-box-2"/>
+          <text x="50" y="75" text-anchor="middle" class="svg-t mono">ソース</text>
+          <line x1="92" y1="70" x2="118" y2="70" class="svg-line" marker-end="url(#ar3)"/>
+
+          <rect x="120" y="40" width="210" height="60" rx="2" class="svg-box"/>
+          <text x="225" y="62" text-anchor="middle" class="svg-t">③ esbuild（Go）</text>
+          <text x="225" y="84" text-anchor="middle" class="svg-t sm"><tspan class="svg-t a" font-size="11">parse</tspan> → 変換 → 文字列化</text>
+
+          <line x1="332" y1="70" x2="378" y2="70" class="svg-line-d" marker-end="url(#ar3)"/>
+          <text x="355" y="62" text-anchor="middle" class="svg-t mono">文字列</text>
+
+          <rect x="380" y="40" width="250" height="60" rx="2" class="svg-box"/>
+          <text x="505" y="62" text-anchor="middle" class="svg-t">①②④⑤ Rollup（JS）</text>
+          <text x="505" y="84" text-anchor="middle" class="svg-t sm"><tspan class="svg-t a" font-size="11">parse</tspan> → グラフ・tree shaking → 出力</text>
+
+          <line x1="632" y1="70" x2="678" y2="70" class="svg-line-d" marker-end="url(#ar3)"/>
+          <text x="655" y="62" text-anchor="middle" class="svg-t mono">文字列</text>
+
+          <rect x="680" y="40" width="190" height="60" rx="2" class="svg-box"/>
+          <text x="775" y="62" text-anchor="middle" class="svg-t">④ esbuild（Go）</text>
+          <text x="775" y="84" text-anchor="middle" class="svg-t sm"><tspan class="svg-t a" font-size="11">parse</tspan> → minify</text>
+          <line x1="872" y1="70" x2="898" y2="70" class="svg-line" marker-end="url(#ar3)"/>
+          <text x="925" y="75" text-anchor="middle" class="svg-t mono">dist/</text>
+
+          <text x="10" y="128" class="svg-t a" font-size="12">parse 3回、言語間（JS ⇄ Go）の文字列受け渡し 2回</text>
+
+          <line x1="10" y1="150" x2="950" y2="150" class="svg-rule"/>
+
+          <text x="10" y="180" class="svg-t hd">Vite 8</text>
+          <rect x="10" y="196" width="80" height="60" rx="2" class="svg-box-2"/>
+          <text x="50" y="231" text-anchor="middle" class="svg-t mono">ソース</text>
+          <line x1="92" y1="226" x2="118" y2="226" class="svg-line" marker-end="url(#ar3)"/>
+
+          <rect x="120" y="196" width="560" height="60" rx="2" class="svg-mark"/>
+          <text x="400" y="218" text-anchor="middle" class="svg-t">①〜⑤ Rolldown ＋ Oxc（すべて Rust）</text>
+          <text x="400" y="240" text-anchor="middle" class="svg-t sm"><tspan class="svg-t a" font-size="11">parse</tspan> → 変換 → グラフ・tree shaking → 出力（同じ AST のまま）</text>
+
+          <line x1="682" y1="226" x2="718" y2="226" class="svg-line" marker-end="url(#ar3)"/>
+          <rect x="720" y="196" width="150" height="60" rx="2" class="svg-box"/>
+          <text x="795" y="218" text-anchor="middle" class="svg-t">④ Oxc minify</text>
+          <text x="795" y="240" text-anchor="middle" class="svg-t sm"><tspan class="svg-t a" font-size="11">parse</tspan> → minify</text>
+          <line x1="872" y1="226" x2="898" y2="226" class="svg-line" marker-end="url(#ar3)"/>
+          <text x="925" y="231" text-anchor="middle" class="svg-t mono">dist/</text>
+
+          <text x="10" y="284" class="svg-t s" font-size="12">変換と解析で AST を共有、言語間の受け渡しなし</text>
+        </svg></div>
+      <p class="small">Vite 7 では担当ツールが替わるたびにコードを文字列に戻し、受け取った側がもう一度 parse していた（簡略化した図）。</p>
+    </div>
+    <aside class="notes">拡張子が .js のファイルは Vite 7 でも esbuild の変換を通らないため、parse は1回少ない。また minify はファイル出力の後にかけるため、Vite 8 でもそこで再度 parse する。要点として、ファイルごとの parse の重複と、言語をまたぐときのコピーがなくなった。</aside>
+  </section>
+
+  <!-- 19 Vue -->
+  <section class="slide">
+    <h2 class="title">3. Vue の構成が 4.8 倍にとどまった理由</h2>
+    <div class="body">
+      <ul>
+        <li><b>JavaScript だけの構成：①〜⑤ が Rust の中で完結する</b><span class="sub">すべてを Rolldown / Oxc が処理するため、並列化と parse の共有の効果がすべて出る</span></li>
+        <li><b>Vue の構成：③ Transform で JavaScript 製のプラグインを呼ぶ</b><span class="sub"><code class="inline">.vue</code> の変換は <code class="inline">@vitejs/plugin-vue</code>（JavaScript）が担当する。Rust から JavaScript に文字列で渡し、JavaScript 側でもう一度 parse し、1スレッドで処理する</span></li>
+      </ul>
+      <p>工程が分かっていれば、<span class="em">どこが速くなり、どこが速くならないか</span>を予想できる。</p>
+    </div>
+    <aside class="notes">JavaScript 製のプラグインで大量のファイルを変換している構成ほど、Vite 8 の効果は小さくなる。ファイル数が少ない分、起動などの固定の時間の割合が大きいことも影響している可能性がある。</aside>
+  </section>
+
+  <!-- 20 dev と build -->
+  <section class="slide">
+    <h2 class="title">3. 開発サーバーは5工程の一部しか使っていない</h2>
+    <div class="body">
+      <table>
+        <thead><tr><th style="width:18%">工程</th><th>開発サーバー（<code class="inline">vite</code>）</th><th>本番ビルド（<code class="inline">vite build</code>）</th></tr></thead>
+        <tbody>
+          <tr><td>①②③</td><td>ブラウザから要求されたファイルだけ</td><td>すべてのファイル</td></tr>
+          <tr><td>④ Optimize</td><td>しない</td><td>bundle / tree shaking / splitting / minify</td></tr>
+          <tr><td>⑤ Emit</td><td>しない（HTTP で直接返す）</td><td><code class="inline">dist/</code> に書き出す</td></tr>
+        </tbody>
+      </table>
+      <ul>
+        <li><b>開発サーバーはバンドルしない</b>：手元のマシンならリクエストが多くても遅くならないため、まとめる必要がない。だから起動が速い（パート2の問いの答え）</li>
+        <li><b>本番ビルドは全ファイルに5工程をかける</b>：ファイル数に比例して時間がかかる。冒頭の 29 秒はこちらで発生している</li>
+      </ul>
+    </div>
+    <aside class="notes">例外として、node_modules のパッケージだけは開発時も起動時にまとめてバンドルする（node_modules/.vite/deps）。パッケージの中のファイルをそのまま配ると、手元でもリクエストが多くなりすぎてしまう。</aside>
+  </section>
+
+  <!-- 21 vite preview -->
+  <section class="slide">
+    <h2 class="title">3. Vite 8 でも vite preview での確認は必要</h2>
+    <div class="body">
+      <ul>
+        <li><b>Vite 7 まで</b>：開発時と本番で使うツールが違っていた<span class="sub">開発時の事前バンドルは esbuild、本番のバンドルは Rollup</span></li>
+        <li><b>Vite 8</b>：開発時も本番も Rolldown / Oxc に統一された<span class="sub">ツールの違いによる挙動の差は小さくなった</span></li>
+        <li><b>ただし、④⑤ を通るかどうかの違いは残る</b><span class="sub">開発時は、圧縮や tree shaking を通っていないコードが動いている</span></li>
+      </ul>
+      <p class="strong">リリース前には、今後も <code class="inline">vite preview</code> で本番用のファイルの動作を確認する必要がある。</p>
+    </div>
+    <aside class="notes">「開発と本番が同じになった」とは言えない。5工程で見れば、何が揃い、何が残ったかを分けて説明できる。</aside>
+  </section>
+
+  <!-- 22 まとめ -->
+  <section class="slide">
+    <h2 class="title">4. まとめ</h2>
+    <div class="body">
+      <ol>
+        <li><b>Vite 8 は、中のツールを Rust 製に統一して大幅に速くなった</b><span class="sub">JavaScript だけの構成で 29 秒 → 0.5 秒。JavaScript 製のプラグインを通る部分は速くなりにくい</span></li>
+        <li><b>JavaScript のビルドは5工程でできている</b><span class="sub">Resolve / Load / Transform を繰り返して依存グラフを作り、Optimize / Emit でまとめて出力する</span></li>
+        <li><b>速くなった理由は、工程の性質で説明できる</b><span class="sub">ファイルごとに独立した ①〜③ を並列化し、重い parse の重複をなくした</span></li>
       </ol>
-      <p class="lead">webpack にとって<span class="em">世界は全部 JS</span>。loader は「JS 以外を JS に翻訳する通訳」です。<br>
-        <code class="inline">import './style.css'</code> が最初は奇妙に見えるのは、この世界観のせい。</p>
-      <aside class="notes">最頻出エラー <code>Module parse failed: Unexpected token</code> ＝「JS 以外を JS として解析して失敗」＝ <b>対応する loader が rules に無い</b>。<code>.vue</code> <code>.scss</code> で出たらこれ、と教えると実務で効く。</aside>
-    </section>
+      <p class="strong">5工程を知っていれば、ツールが変わっても「何が変わったのか」を自分で読み解ける。</p>
+    </div>
+    <aside class="notes">新しいビルドツールが出てきたら、まず5工程のどこを誰が担当しているかを見るとよい。</aside>
+  </section>
 
-    <!-- 33 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート5 · ツールの内部構造" data-time="52–68分">
-      <span class="kicker">Rollup コアの構造</span>
-      <h2>Rollup コアの<span class="q">4フェーズ</span></h2>
-      <div class="tablewrap">
-        <table>
-          <thead><tr><th>フェーズ</th><th>中身</th></tr></thead>
-          <tbody>
-            <tr><td>① パース</td><td>各モジュールを AST に。<b>Rollup 4 はネイティブパーサ</b>（Rust・SWC ベース、<code class="inline">@rollup/rollup-*.node</code>）。昔は Acorn（JS製）</td></tr>
-            <tr><td>② グラフ ＋ バインディング解析</td><td>import を辿って依存グラフを作り、<b>全モジュールの変数束縛とスコープ</b>を解析。どの export がどこで使われるか</td></tr>
-            <tr><td>③ tree-shaking ＋ chunk 分割</td><td>到達不能・副作用なしを<b>「文（statement）」単位</b>で削除（<code class="inline">sideEffects</code> / <code class="inline">/*#__PURE__*/</code> を尊重）。動的 import を境に chunk</td></tr>
-            <tr><td>④ レンダリング</td><td>含める文だけを<b>元のソース文字列のまま</b>繋ぎ直す。AST を出力し直すのではなく <b>magic-string</b> で必要箇所のみ編集（リネーム・削除・ラップ）</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <ul class="points">
-        <li class="key"><b>コアがやらないことは全部プラグイン</b> — bare 解決 ／ TS・JSX 変換 ／ minify ／ CSS</li>
-        <li>webpack と逆で、<b>全モジュールを1スコープに平らに展開</b>（スコープホイスティング）→ 名前衝突は <code class="inline">foo$1</code> にリネーム。出力が小さいのはこの方式のため</li>
-      </ul>
-      <p class="lead">だから Vite 7 の <code class="inline">vite build</code> ＝ <span class="em">Rollup コア ＋ Vite 内蔵プラグイン ＋ esbuild ＋ node-resolve</span>。</p>
-      <aside class="notes">直前の webpack パート（<code>__webpack_require__</code>：各モジュールを関数で包む）と対比すると効く。Rollup は「関数で包まず、1つのスコープに畳んで名前を付け替える」。だから出力を整形すればほぼ普通のコードとして読める。</aside>
-    </section>
+  <!-- 23 補足 -->
+  <section class="slide">
+    <h2 class="title">補足：よくある質問</h2>
+    <div class="body">
+      <table>
+        <thead><tr><th style="width:28%">質問</th><th>回答</th></tr></thead>
+        <tbody>
+          <tr><td>型チェックは誰がしているのか</td><td>esbuild も Oxc も型を取り除くだけで、型チェックはしない。CI などで <code class="inline">tsc --noEmit</code> を別に実行する。</td></tr>
+          <tr><td>ビルド結果はキャッシュされるのか</td><td><code class="inline">vite build</code> はビルド結果をキャッシュしない。今回の測定も、毎回 <code class="inline">dist</code> を削除して実行している。</td></tr>
+          <tr><td>すぐ Vite 8 に上げるべきか</td><td>アプリのコードと設定の書き方は基本的に変わらない。ただし出力の中身が変わるため、<code class="inline">dist</code> のスナップショットテストは更新が必要になる。使っている Rollup プラグインの動作と公式の移行ガイドを確認したうえで判断するとよい。</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <aside class="notes">以上。</aside>
+  </section>
 
-    <!-- 34 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート5 · ツールの内部構造" data-time="52–68分">
-      <span class="eyebrow">いま起きている置き換え</span>
-      <h2>JS 製ツールの <span class="q">Rust / Go 製への置き換え</span></h2>
-      <div class="tablewrap">
-        <table>
-          <thead><tr><th>これまで（JS製）</th><th>置き換え先</th><th>言語</th><th>ひとこと</th></tr></thead>
-          <tbody>
-            <tr><td class="mono">Babel</td><td class="mono">SWC / Oxc / esbuild</td><td>Rust / Go</td><td>Next.js はすでに SWC</td></tr>
-            <tr><td class="mono">webpack</td><td class="mono"><b>Rspack</b> / Turbopack</td><td>Rust</td><td><b>Rspack は設定がほぼ互換</b></td></tr>
-            <tr><td class="mono">Rollup</td><td class="mono"><b>Rolldown</b></td><td>Rust</td><td>Vite 8 で採用済み</td></tr>
-            <tr><td class="mono">terser</td><td class="mono">esbuild / oxc-minify</td><td>Go / Rust</td><td>—</td></tr>
-            <tr><td class="mono">ESLint</td><td class="mono">Oxlint / Biome</td><td>Rust</td><td>ビルド外だが同じ流れ</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <p class="lead">重要なのは、<span class="em">概念は何も変わっていない</span>ということ。<br>
-        5工程も、loader / plugin という抽象も、そのまま通用します。</p>
-      <aside class="notes">「じゃあ今の知識は無駄になる？」への先回り。<b>実装言語が変わっただけで、5工程の骨格は同じ</b>。だから今日の話は陳腐化しない、と締める。</aside>
-    </section>
-
-    <!-- 35 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート5 · ツールの内部構造" data-time="52–68分">
-      <span class="kicker">Rolldown ＝ コア再実装 ＋ 統合</span>
-      <h2>Rolldown の構成：<span class="q">コア再実装 ＋ 変換・解決の統合</span></h2>
-      <div class="tablewrap">
-        <table>
-          <thead><tr><th>Rollup コアの部品</th><th>Rolldown</th></tr></thead>
-          <tbody>
-            <tr><td>SWC ベースのパーサ</td><td class="mono">Oxc パーサ</td></tr>
-            <tr><td>自前のスコープ / バインディング解析</td><td class="mono">Oxc の semantic 解析</td></tr>
-            <tr><td>magic-string でのレンダリング</td><td class="mono">Rolldown 自前（Rust の文字列処理）</td></tr>
-            <tr><td>tree-shaking / chunk</td><td class="mono">Rolldown 自前（Rollup 互換の挙動が目標）</td></tr>
-            <tr><td>（esbuild プラグインが担当）変換 / minify</td><td class="mono"><b>Oxc の transformer / minifier を内蔵</b></td></tr>
-            <tr><td>（node-resolve プラグイン）</td><td class="mono"><b>oxc-resolver を内蔵</b></td></tr>
-          </tbody>
-        </table>
-      </div>
-      <p class="pull">プラグイン API は Rollup 互換。既存のプラグイン資産がほぼ動く。<br>
-        だから <code class="inline">vite.config.js</code> の <span class="em"><code class="inline">rollupOptions</code></span> が Vite 8 でも残っている。</p>
-      <aside class="notes">Oxc（The Oxidation Compiler）は parser / semantic / transformer / minifier / resolver / linter を揃えた Rust 製ツールチェーン。Rolldown・oxlint・Vite の内部変換が乗っている。「Rollup + esbuild + node-resolve を 1 つに統合する」ことが Rolldown の設計目標であり、パート4〜5の結論。</aside>
-    </section>
-
-    <!-- 36 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート6 · まとめ" data-time="68–73分">
-      <span class="kicker">パート2の整理</span>
-      <h2>5工程で見る <span class="q">Vite 7 → 8 の変更範囲</span></h2>
-      <div class="tablewrap">
-        <table>
-          <thead><tr><th>工程</th><th>Vite 7 → 8 での変化</th></tr></thead>
-          <tbody>
-            <tr><td>① Resolve ／ ② Load</td><td>外から見た動作は同じ（内部実装は Rolldown 側へ）</td></tr>
-            <tr><td>③ Transform（TS / JSX / CSS）</td><td class="mono">JS: esbuild → Oxc ／ CSS: esbuild → lightningcss</td></tr>
-            <tr><td>④ Optimize（bundle / tree shaking / minify / split）</td><td class="mono">Rollup → Rolldown（JS minify は Oxc、CSS minify は lightningcss）</td></tr>
-            <tr><td>⑤ Emit</td><td>動作は同じ（ハッシュ付きファイル名・<code class="inline">&lt;link&gt;</code> 注入）</td></tr>
-            <tr><td>（開発時）依存の事前バンドル</td><td class="mono">esbuild → Rolldown</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <ul class="points">
-        <li class="key"><b>開発サーバーの動作モデルと、設定ファイルの基本構造は変わらない</b></li>
-        <li>ビルドの5工程という骨格も変わらない。実装言語が変わり、高速化した</li>
-      </ul>
-      <p class="lead">変わったのは各工程を実行するエンジンであり、工程そのものではありません。</p>
-      <aside class="notes">Rollup / Rolldown の内部構造はパート4・5で扱う。</aside>
-    </section>
-
-    <!-- 37 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート6 · まとめ" data-time="68–73分">
-      <span class="kicker">本日のまとめ</span>
-      <h2>要点の再確認</h2>
-      <ol class="steps">
-        <li><b>Vite 7 → 8 の主な変更は、内部エンジンの JS 製 → Rust 製への置き換え</b><br>
-          <span style="color:var(--ink-soft)">開発時の事前バンドルと変換（esbuild → Rolldown / Oxc）、本番のバンドル（Rollup → Rolldown）、CSS 処理（esbuild → lightningcss）。開発サーバーの動作モデルと設定構造は変わらない。</span></li>
-        <li><b>エンジンは変わったが、ビルドの5工程という骨格は変わらない</b><br>
-          <span style="color:var(--ink-soft)">Resolve / Load / Transform / Optimize / Emit。「同じ処理を、より速い実装で行う」という位置づけ。</span></li>
-      </ol>
-      <p class="pull">変更点を把握できれば、<br>更新の可否は判断できます。</p>
-      <p class="lead">手を動かす場合：<code class="inline">02-vite</code>（:5173）と <code class="inline">02b-vite7</code>（:5273）を同時に起動し、
-        両方を <code class="inline">npm run build</code> して <code class="inline">diff -rq</code> で出力を比較する。<br>
-        webpack を含む詳細版は <code class="inline">SLIDES.html</code>、前提知識は <code class="inline">docs/js-background.md</code>。</p>
-      <aside class="notes">想定質問：「すぐに Vite 8 へ更新すべきか」→ 開発サーバーの動作モデルと設定構造は変わらないため影響は限定的。確認事項はスナップショットテスト、一部の Rollup プラグイン、および移行ガイドの破壊的変更。「型チェックは誰が行うか」→ esbuild も Oxc も型検査は行わない。<code>tsc --noEmit</code> を CI で別途実行する。</aside>
-    </section>
-
-    <!-- 38 ─────────────────────────────────────────────── -->
-    <section class="slide" data-sec="パート6 · まとめ" data-time="68–73分">
-      <span class="eyebrow">よくあるエラー</span>
-      <h2>よくあるエラーと<span class="q">原因</span></h2>
-      <div class="tablewrap">
-        <table>
-          <thead><tr><th>症状</th><th>原因</th></tr></thead>
-          <tbody>
-            <tr><td class="mono">Failed to resolve module specifier</td><td>バンドラを通していない。生の bare import</td></tr>
-            <tr><td class="mono">Cannot use import statement outside a module</td><td><code class="inline">type="module"</code> が無い / Node の <code class="inline">"type"</code> 未設定</td></tr>
-            <tr><td class="mono">Module parse failed: Unexpected token</td><td><b>対応する loader が <code class="inline">module.rules</code> に無い</b></td></tr>
-            <tr><td class="mono">require is not defined</td><td>CJS 前提のコードを ESM 環境で実行している</td></tr>
-            <tr><td class="mono">__dirname is not defined</td><td>ESM には無い。<code class="inline">import.meta.dirname</code> を使う</td></tr>
-            <tr><td class="mono">process is not defined</td><td>Node の API をブラウザ向けコードで使用。webpack 5 で自動 polyfill 廃止</td></tr>
-            <tr><td>dev では動くが本番で壊れる</td><td>Vite の dev / build アーキテクチャ差。<code class="inline">vite preview</code> で確認</td></tr>
-            <tr><td>バンドルが異様に大きい</td><td><code class="inline">import * as</code> / CJS パッケージで tree shaking が効いていない</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <aside class="notes">時間が押していたら<b>このスライドは飛ばして「資料に入ってます」で済ませる</b>。読み物として後で効くページ。</aside>
-    </section>
-  </div>
-
-  <div class="controls">
-    <button type="button" id="prev">← 前</button>
-    <button type="button" id="next">次 →</button>
-    <button type="button" id="notes">話者ノート（N）</button>
-    <span class="hint">← → / Space で移動 · N でノート · F で全画面</span>
-  </div>
 </div>
 
 <script>
@@ -1337,37 +765,25 @@ module.exports = { foo };</pre>
     var total = slides.length;
     var i = 0;
 
-    var barSec = document.getElementById('bar-sec');
-    var barTime = document.getElementById('bar-time');
-    var barN = document.getElementById('bar-n');
-    var barTotal = document.getElementById('bar-total');
-    var barFill = document.getElementById('bar-fill');
-
-    barTotal.textContent = String(total);
+    slides.forEach(function (s, k) {
+      if (k === 0) return;
+      var n = document.createElement('div');
+      n.className = 'pageno';
+      n.textContent = String(k + 1);
+      s.appendChild(n);
+    });
 
     function show(n) {
       i = Math.max(0, Math.min(total - 1, n));
       slides.forEach(function (s, k) { s.classList.toggle('active', k === i); });
-      var s = slides[i];
-      barSec.textContent = s.dataset.sec || '';
-      barTime.textContent = s.dataset.time || '';
-      barN.textContent = String(i + 1);
-      barFill.style.width = ((i + 1) / total * 100) + '%';
-      s.scrollTop = 0;
       if (history.replaceState) history.replaceState(null, '', '#' + (i + 1));
     }
-
-    document.getElementById('prev').addEventListener('click', function () { show(i - 1); });
-    document.getElementById('next').addEventListener('click', function () { show(i + 1); });
-    document.getElementById('notes').addEventListener('click', function () {
-      document.body.classList.toggle('notes-on');
-    });
 
     document.addEventListener('keydown', function (e) {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       var k = e.key;
-      if (k === 'ArrowRight' || k === 'PageDown' || k === ' ' || k === 'j') { e.preventDefault(); show(i + 1); }
-      else if (k === 'ArrowLeft' || k === 'PageUp' || k === 'k') { e.preventDefault(); show(i - 1); }
+      if (k === 'ArrowRight' || k === 'ArrowDown' || k === 'PageDown' || k === ' ' || k === 'Enter') { e.preventDefault(); show(i + 1); }
+      else if (k === 'ArrowLeft' || k === 'ArrowUp' || k === 'PageUp' || k === 'Backspace') { e.preventDefault(); show(i - 1); }
       else if (k === 'Home') { e.preventDefault(); show(0); }
       else if (k === 'End') { e.preventDefault(); show(total - 1); }
       else if (k === 'n' || k === 'N') { document.body.classList.toggle('notes-on'); }
@@ -1376,6 +792,11 @@ module.exports = { foo };</pre>
         else if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen();
       }
     });
+    // document.getElementById('stage').addEventListener('click', function (e) {
+    //   if (e.target.closest('a, button')) return;
+    //   var w = window.innerWidth;
+    //   show(e.clientX < w / 3 ? i - 1 : i + 1);
+    // });
 
     var start = parseInt((location.hash || '').replace('#', ''), 10);
     show(isNaN(start) ? 0 : start - 1);
